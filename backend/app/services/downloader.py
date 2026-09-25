@@ -3,6 +3,7 @@ import re
 import uuid
 import asyncio
 import logging
+import shutil
 from typing import Dict, Any, Optional
 from pathlib import Path
 import yt_dlp
@@ -92,7 +93,6 @@ class DownloaderService:
     ):
         cls.update_task(task_id, status='processing', stage='Connecting to stream server...')
         
-        # Prepare file output path
         output_template = str(DOWNLOADS_DIR / f"{task_id}_%(title).100s.%(ext)s")
 
         def progress_hook(d):
@@ -117,7 +117,7 @@ class DownloaderService:
                 cls.update_task(
                     task_id,
                     status='downloading',
-                    progress=pct,
+                    progress=min(95.0, pct),
                     speed=speed_str,
                     eta=eta_str,
                     stage=f"Downloading stream ({pct}%)..."
@@ -126,8 +126,8 @@ class DownloaderService:
                 cls.update_task(
                     task_id,
                     status='processing',
-                    progress=98.0,
-                    stage="Merging and finalizing media file with FFmpeg..."
+                    progress=96.0,
+                    stage="Finalizing media with FFmpeg..."
                 )
 
         ydl_opts: Dict[str, Any] = {
@@ -138,46 +138,42 @@ class DownloaderService:
             'noplaylist': True,
             'socket_timeout': 30,
         }
-        import shutil
+        
         if shutil.which('node'):
             ydl_opts['js_runtimes'] = {'node': {}}
 
-        # Handling Sections / Clipping
-        if start_time is not None or end_time is not None:
-            # yt-dlp download sections
-            s_time = start_time if start_time is not None else 0
+        # Configure Clipping / Section Download
+        is_clipped = (start_time is not None or end_time is not None)
+        if is_clipped:
+            s_time = start_time if start_time is not None else 0.0
             e_time = end_time if end_time is not None else "inf"
             ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [(s_time, e_time)])
-            ydl_opts['force_keyframes_at_cuts'] = True
+            # Do NOT set force_keyframes_at_cuts = True because it forces slow CPU software re-encoding
 
-        # Video vs Audio formatting
+        target_ext = "mp4"
+
+        # Video vs Audio Mode
         if download_type == "video":
-            # Target resolution selector
+            target_ext = format_ext if format_ext in ['mp4', 'mkv', 'webm'] else 'mp4'
+            
+            # Select resolution without arbitrary limits
             if height:
-                # Up to maximum requested resolution without any cap!
-                format_spec = f"bestvideo[height<={height}]+bestaudio/bestvideo[height<={height}]+best/best[height<={height}]/best"
+                format_spec = f"bestvideo[height<={height}][ext={target_ext}]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
             else:
-                # Maximum absolute quality available
-                format_spec = "bestvideo+bestaudio/best"
+                format_spec = f"bestvideo[ext={target_ext}]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
                 
             ydl_opts['format'] = format_spec
-            ydl_opts['merge_output_format'] = format_ext if format_ext in ['mp4', 'mkv', 'webm'] else 'mp4'
-            
-            # Postprocessor to ensure container compatibility
-            ydl_opts['postprocessors'] = [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': ydl_opts['merge_output_format']
-            }]
+            ydl_opts['merge_output_format'] = target_ext
         else:
-            # Audio mode
-            audio_codec = format_ext if format_ext in ['mp3', 'm4a', 'wav', 'flac', 'opus', 'aac'] else 'mp3'
+            # Audio Mode
+            target_ext = format_ext if format_ext in ['mp3', 'm4a', 'wav', 'flac', 'opus', 'aac'] else 'mp3'
             ydl_opts['format'] = 'bestaudio/best'
             
             postprocessor: Dict[str, Any] = {
                 'key': 'FFmpegExtractAudio',
-                'preferredcodec': audio_codec,
+                'preferredcodec': target_ext,
             }
-            if audio_codec == 'mp3':
+            if target_ext == 'mp3':
                 clean_bitrate = '320' if '320' in audio_bitrate else '192'
                 postprocessor['preferredquality'] = clean_bitrate
                 
@@ -186,27 +182,47 @@ class DownloaderService:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(url, download=True)
-                
-            # Locate the generated file
-            final_file_path = None
-            if info_dict:
-                # Find the downloaded file in DOWNLOADS_DIR matching task_id prefix
-                matching_files = list(DOWNLOADS_DIR.glob(f"{task_id}_*"))
-                if matching_files:
-                    # Pick newest or largest
-                    final_file_path = max(matching_files, key=lambda f: f.stat().st_size)
 
-            if not final_file_path or not final_file_path.exists():
-                raise FileNotFoundError("Output file was not generated properly.")
+            cls.update_task(task_id, stage="Locating output file...")
+
+            # Locate the generated file with matching prefix
+            matching_files = list(DOWNLOADS_DIR.glob(f"{task_id}_*"))
+            if not matching_files:
+                raise FileNotFoundError("Output file was not generated.")
+
+            # Filter out temporary .part or .ytdl files
+            valid_files = [f for f in matching_files if not f.name.endswith(('.part', '.ytdl', '.temp'))]
+            
+            # Prefer file with target_ext
+            target_files = [f for f in valid_files if f.suffix.lower() == f".{target_ext.lower()}"]
+            if target_files:
+                final_file_path = target_files[0]
+            elif valid_files:
+                final_file_path = valid_files[0]
+            else:
+                final_file_path = matching_files[0]
+
+            # Clean up intermediate unneeded files for this task
+            for f in matching_files:
+                if f != final_file_path:
+                    try:
+                        f.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+            if not final_file_path.exists():
+                raise FileNotFoundError(f"Final file {final_file_path.name} was not found.")
 
             file_size_bytes = final_file_path.stat().st_size
             clean_name = final_file_path.name.replace(f"{task_id}_", "")
 
             # If user provided a clip, add timestamp info to display filename
-            if start_time is not None or end_time is not None:
+            if is_clipped:
                 stem = Path(clean_name).stem
                 ext = Path(clean_name).suffix
-                clip_tag = f"_[clip_{format_seconds(start_time).replace(':', '-')}_to_{format_seconds(end_time).replace(':', '-')}]"
+                s_str = format_seconds(start_time).replace(':', '-') if start_time is not None else "00-00"
+                e_str = format_seconds(end_time).replace(':', '-') if end_time is not None else "end"
+                clip_tag = f"_[clip_{s_str}_to_{e_str}]"
                 clean_name = f"{stem}{clip_tag}{ext}"
 
             cls.update_task(
