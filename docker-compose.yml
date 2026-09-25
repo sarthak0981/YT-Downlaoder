@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  tubeharvest:
+    build: .
+    container_name: tubeharvest-pro
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - FILE_EXPIRY_MINUTES=30
+      - CLEANUP_INTERVAL_SECONDS=300
+    volumes:
+      - ./downloads:/app/downloads
+    restart: unless-stopped

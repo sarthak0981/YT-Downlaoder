@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: tubeharvest-pro
+    env: docker
+    plan: free
+    region: oregon
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: HOST
+        value: 0.0.0.0
+      - key: FILE_EXPIRY_MINUTES
+        value: 30

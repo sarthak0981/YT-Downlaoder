@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+downloads/*
+!downloads/.gitkeep
+.git/
+.gitignore
+.env
+*.log
+.DS_Store
