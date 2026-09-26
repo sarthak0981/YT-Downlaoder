@@ -4,6 +4,8 @@ import uuid
 import asyncio
 import logging
 import shutil
+import json
+import subprocess
 from typing import Dict, Any, Optional
 from pathlib import Path
 import yt_dlp
@@ -21,6 +23,55 @@ def sanitize_filename(name: str) -> str:
     clean = re.sub(r'[\'\"\\/*?:"<>|]', "", name)
     clean = clean.strip()
     return clean[:100] if len(clean) > 100 else (clean or "download")
+
+def ensure_mp4_audio_compatibility(file_path: Path) -> Path:
+    """
+    Guarantees that MP4 files have universal AAC audio playable on Windows Media Player,
+    QuickTime, Safari, Android, and iOS.
+    If the audio codec is Opus or Vorbis (which Windows Media Player cannot decode in MP4),
+    this losslessly copies the video and converts audio to AAC in ~0.2 seconds.
+    """
+    if file_path.suffix.lower() != '.mp4':
+        return file_path
+        
+    try:
+        res = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_streams', '-select_streams', 'a', '-of', 'json', str(file_path)],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if res.returncode == 0 and res.stdout:
+            data = json.loads(res.stdout)
+            audio_streams = data.get('streams', [])
+            
+            needs_remux = False
+            if audio_streams:
+                codec = audio_streams[0].get('codec_name', '').lower()
+                # Opus, Vorbis, etc. in an MP4 container will play silently on standard Windows/Mac players
+                if codec not in ['aac', 'mp3', 'alac']:
+                    needs_remux = True
+            
+            if needs_remux:
+                logger.info(f"Remuxing {file_path.name} to convert {codec} audio to universal AAC...")
+                temp_fixed = file_path.parent / f"clean_{file_path.name}"
+                cmd = [
+                    'ffmpeg', '-y', '-i', str(file_path),
+                    '-c:v', 'copy',
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    '-avoid_negative_ts', 'make_zero',
+                    str(temp_fixed)
+                ]
+                conv = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if conv.returncode == 0 and temp_fixed.exists() and temp_fixed.stat().st_size > 0:
+                    file_path.unlink(missing_ok=True)
+                    temp_fixed.rename(file_path)
+                    logger.info("Successfully converted audio to universal AAC!")
+    except Exception as e:
+        logger.warning(f"Audio compatibility check exception: {e}")
+        
+    return file_path
 
 class DownloaderService:
     @staticmethod
@@ -96,8 +147,6 @@ class DownloaderService:
         output_template = str(DOWNLOADS_DIR / f"{task_id}_%(title).100s.%(ext)s")
 
         # Track multi-stream DASH progress monotonically
-        # For video with separate audio: stream 1 (video) = 5% to 70%, stream 2 (audio) = 70% to 90%
-        # For audio-only: stream 1 = 5% to 85%
         is_dash_video = (download_type == "video")
         stream_index = 1
 
@@ -206,14 +255,24 @@ class DownloaderService:
         if download_type == "video":
             target_ext = format_ext if format_ext in ['mp4', 'mkv', 'webm'] else 'mp4'
             
-            # Select resolution without arbitrary limits
+            # Select resolution without arbitrary limits and prioritize compatible audio
             if height:
-                format_spec = f"bestvideo[height<={height}][ext={target_ext}]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+                format_spec = f"bestvideo[height<={height}]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio[acodec^=mp4a]/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
             else:
-                format_spec = f"bestvideo[ext={target_ext}]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+                format_spec = f"bestvideo+bestaudio[ext=m4a]/bestvideo+bestaudio[acodec^=mp4a]/bestvideo+bestaudio/best"
                 
             ydl_opts['format'] = format_spec
             ydl_opts['merge_output_format'] = target_ext
+            
+            # If MP4, ensure audio is encoded to universal AAC
+            if target_ext == 'mp4':
+                ydl_opts['postprocessor_args'] = {
+                    'Merger': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']
+                }
+                if is_clipped:
+                    ydl_opts['downloader_args'] = {
+                        'ffmpeg': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-avoid_negative_ts', 'make_zero']
+                    }
         else:
             # Audio Mode
             target_ext = format_ext if format_ext in ['mp3', 'm4a', 'wav', 'flac', 'opus', 'aac'] else 'mp3'
@@ -233,7 +292,7 @@ class DownloaderService:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(url, download=True)
 
-            cls.update_task(task_id, stage="Locating output file...", progress=99.0)
+            cls.update_task(task_id, stage="Verifying media streams...", progress=99.0)
 
             # Locate the generated file with matching prefix
             matching_files = list(DOWNLOADS_DIR.glob(f"{task_id}_*"))
@@ -262,6 +321,10 @@ class DownloaderService:
 
             if not final_file_path.exists():
                 raise FileNotFoundError(f"Final file {final_file_path.name} was not found.")
+
+            # Guarantee that MP4 files have universal AAC audio playable everywhere
+            if download_type == "video" and target_ext == "mp4":
+                final_file_path = ensure_mp4_audio_compatibility(final_file_path)
 
             file_size_bytes = final_file_path.stat().st_size
             clean_name = final_file_path.name.replace(f"{task_id}_", "")

@@ -1,7 +1,10 @@
 /**
- * TubeHarvest Pro - Professional Frontend Controller
- * Single-Task Polling Engine, Bulletproof Fixed Modal,
- * Interactive Dual-Handle Scrubber, and Utilities.
+ * TubeHarvest Pro - Minimalist Futuristic Frontend Controller
+ * - Unambiguous Mode Switching
+ * - Guaranteed Audio & Video Extraction
+ * - Full-Res HD Thumbnail Downloader Utility
+ * - Interactive Dual-Handle Scrubber
+ * - Bulletproof Single-Task Polling
  */
 
 // Self-contained utility fallbacks
@@ -65,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let endSeconds = 0;
     let totalDuration = 0;
 
-    // Strict Single-Task State
+    // Single-Task Engine
     let currentActiveTaskId = null;
     let currentPollTimer = null;
     let downloadTriggered = false;
@@ -96,11 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoTitle = document.getElementById('videoTitle');
     const videoChannel = document.getElementById('videoChannel');
     const videoViews = document.getElementById('videoViews');
-    const maxResBadge = document.getElementById('maxResBadge');
+    const downloadThumbBtn = document.getElementById('downloadThumbBtn');
     const copyUrlBtn = document.getElementById('copyUrlBtn');
     const copyUrlText = document.getElementById('copyUrlText');
     const openYtLink = document.getElementById('openYtLink');
-    const resetFetchBtn = document.getElementById('resetFetchBtn');
 
     // Mode Tabs & Panes
     const tabVideo = document.getElementById('tabVideo');
@@ -111,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const resolutionsList = document.getElementById('resolutionsList');
     const audioList = document.getElementById('audioList');
 
-    // Interactive Trimmer & Scrubber Elements
+    // Interactive Trimmer Elements
     const clipToggleBtn = document.getElementById('clipToggleBtn');
     const clipToggleThumb = document.getElementById('clipToggleThumb');
     const trimmerPanel = document.getElementById('trimmerPanel');
@@ -126,14 +128,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const activeSelectionMetrics = document.getElementById('activeSelectionMetrics');
     const startTimeInput = document.getElementById('startTimeInput');
     const endTimeInput = document.getElementById('endTimeInput');
-    const startSecLabel = document.getElementById('startSecLabel');
-    const endSecLabel = document.getElementById('endSecLabel');
-    const clipDurationDisplay = document.getElementById('clipDurationDisplay');
 
-    // Summary & Download
+    // Summary & Download Button
     const downloadTargetSummary = document.getElementById('downloadTargetSummary');
     const startDownloadBtn = document.getElementById('startDownloadBtn');
-    const btnDownloadIcon = document.getElementById('btnDownloadIcon');
     const btnDownloadText = document.getElementById('btnDownloadText');
 
     // Modal Elements (Fixed Overlay)
@@ -191,15 +189,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             videoUrlInput.focus();
         }
-    });
-
-    // Sample Link Buttons
-    document.querySelectorAll('.sample-chip').forEach(btn => {
-        btn.addEventListener('click', () => {
-            videoUrlInput.value = btn.dataset.url;
-            clearUrlBtn.classList.remove('hidden');
-            triggerFetch();
-        });
     });
 
     // Error Alert Dismiss
@@ -281,15 +270,23 @@ document.addEventListener('DOMContentLoaded', () => {
         timelineMidpoint.textContent = formatSeconds(totalDuration / 2);
         timelineTotal.textContent = formatSeconds(totalDuration);
 
-        // Max Resolution Badge
-        const maxLabel = (data.resolutions && data.resolutions.length > 0) ? data.resolutions[0].label : 'HD';
-        maxResBadge.textContent = `Max: ${maxLabel}`;
-
         renderResolutions();
         renderAudioOptions();
+        setDownloadMode('video'); // default to video explicitly
         syncScrubberPositions();
-        updateDownloadSummary();
     }
+
+    // HD Thumbnail Downloader Utility
+    downloadThumbBtn.addEventListener('click', () => {
+        if (!currentVideoData) return;
+        const thumbDownloadUrl = `/api/thumbnail?url=${encodeURIComponent(currentVideoData.url)}&title=${encodeURIComponent(currentVideoData.title)}`;
+        const a = document.createElement('a');
+        a.href = thumbDownloadUrl;
+        a.download = `${currentVideoData.title || 'video'}_Thumbnail.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    });
 
     // Copy Video Link utility
     copyUrlBtn.addEventListener('click', async () => {
@@ -302,17 +299,6 @@ document.addEventListener('DOMContentLoaded', () => {
             copyUrlText.textContent = "Failed";
             setTimeout(() => { copyUrlText.textContent = "Copy Link"; }, 2000);
         }
-    });
-
-    // Reset Fetch
-    resetFetchBtn.addEventListener('click', () => {
-        detailsCard.classList.add('hidden');
-        playerPreviewBox.classList.add('hidden');
-        previewIframe.src = '';
-        currentVideoData = null;
-        videoUrlInput.value = '';
-        clearUrlBtn.classList.add('hidden');
-        videoUrlInput.focus();
     });
 
     // In-App Preview Player
@@ -329,32 +315,57 @@ document.addEventListener('DOMContentLoaded', () => {
         previewIframe.src = '';
     });
 
+    // ==========================================
+    // UNAMBIGUOUS MODE SWITCHING & SELECTION
+    // ==========================================
+
+    function setDownloadMode(mode) {
+        selectedMode = mode;
+
+        if (mode === 'video') {
+            tabVideo.className = "py-2.5 rounded-lg flex items-center justify-center gap-2 bg-rose-600 text-white shadow-md transition-all font-bold";
+            tabAudio.className = "py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200 transition-all font-bold";
+            videoPane.classList.remove('hidden');
+            audioPane.classList.add('hidden');
+        } else {
+            tabAudio.className = "py-2.5 rounded-lg flex items-center justify-center gap-2 bg-rose-600 text-white shadow-md transition-all font-bold";
+            tabVideo.className = "py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200 transition-all font-bold";
+            audioPane.classList.remove('hidden');
+            videoPane.classList.add('hidden');
+        }
+
+        updateDownloadSummary();
+    }
+
+    tabVideo.addEventListener('click', () => setDownloadMode('video'));
+    tabAudio.addEventListener('click', () => setDownloadMode('audio'));
+    videoFormatSelect.addEventListener('change', updateDownloadSummary);
+
     // Render Video Resolution Options
     function renderResolutions() {
         resolutionsList.innerHTML = '';
         if (currentVideoData.resolutions && currentVideoData.resolutions.length > 0) {
             currentVideoData.resolutions.forEach((res, index) => {
                 const row = document.createElement('div');
-                row.className = `option-row flex items-center justify-between p-3.5 bg-dark-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/10 shadow-sm' : 'border-white/[0.08] hover:border-zinc-700'}`;
+                row.className = `option-row flex items-center justify-between p-3 bg-dark-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/10 shadow-sm' : 'border-white/[0.08] hover:border-zinc-700'}`;
                 row.dataset.height = res.height;
                 
                 const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
                 const dynamicSize = formatBytes(Math.round(activeDuration * res.bytes_per_sec));
 
                 row.innerHTML = `
-                    <div class="flex items-center gap-3">
-                        <div class="radio-circle w-4 h-4 rounded-full border-2 flex items-center justify-center ${index === 0 ? 'border-rose-500 bg-rose-500' : 'border-zinc-600'}">
-                            <span class="w-1.5 h-1.5 rounded-full bg-white ${index === 0 ? '' : 'hidden'}"></span>
+                    <div class="flex items-center gap-2.5">
+                        <div class="radio-circle w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${index === 0 ? 'border-rose-500 bg-rose-500' : 'border-zinc-600'}">
+                            <span class="w-1 h-1 rounded-full bg-white ${index === 0 ? '' : 'hidden'}"></span>
                         </div>
                         <div>
-                            <div class="font-bold text-sm text-white flex items-center gap-1.5">
+                            <div class="font-bold text-xs sm:text-sm text-white flex items-center gap-1.5">
                                 <span>${res.resolution}</span>
-                                <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-dark-800 text-rose-400 border border-rose-500/20">${res.quality_tag}</span>
+                                <span class="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-dark-800 text-rose-400 border border-rose-500/20">${res.quality_tag}</span>
                             </div>
-                            <div class="text-[11px] text-zinc-500 mt-0.5">${res.fps > 30 ? res.fps + ' fps • ' : ''}Enhanced Stream</div>
                         </div>
                     </div>
-                    <div class="res-size font-mono text-xs font-semibold text-zinc-300">
+                    <div class="res-size font-mono text-xs font-semibold text-zinc-400">
                         ${dynamicSize}
                     </div>
                 `;
@@ -363,17 +374,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.querySelectorAll('#resolutionsList .option-row').forEach(r => {
                         r.classList.remove('border-rose-500', 'bg-rose-500/10', 'shadow-sm');
                         r.classList.add('border-white/[0.08]');
-                        r.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-zinc-600 flex items-center justify-center';
+                        r.querySelector('.radio-circle').className = 'radio-circle w-3.5 h-3.5 rounded-full border-2 border-zinc-600 flex items-center justify-center';
                         r.querySelector('.radio-circle span').classList.add('hidden');
                     });
 
                     row.classList.remove('border-white/[0.08]');
                     row.classList.add('border-rose-500', 'bg-rose-500/10', 'shadow-sm');
-                    row.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-rose-500 bg-rose-500 flex items-center justify-center';
+                    row.querySelector('.radio-circle').className = 'radio-circle w-3.5 h-3.5 rounded-full border-2 border-rose-500 bg-rose-500 flex items-center justify-center';
                     row.querySelector('.radio-circle span').classList.remove('hidden');
 
                     selectedResolution = res;
-                    updateDownloadSummary();
+                    setDownloadMode('video');
                 });
 
                 resolutionsList.appendChild(row);
@@ -388,22 +399,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentVideoData.audio_options && currentVideoData.audio_options.length > 0) {
             currentVideoData.audio_options.forEach((opt, index) => {
                 const card = document.createElement('div');
-                card.className = `audio-row flex items-center justify-between p-3.5 bg-dark-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/10 shadow-sm' : 'border-white/[0.08] hover:border-zinc-700'}`;
+                card.className = `audio-row flex items-center justify-between p-3 bg-dark-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/10 shadow-sm' : 'border-white/[0.08] hover:border-zinc-700'}`;
                 
                 const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
                 const dynamicSize = formatBytes(Math.round(activeDuration * opt.bytes_per_sec));
 
                 card.innerHTML = `
-                    <div class="flex items-center gap-3">
-                        <div class="radio-circle w-4 h-4 rounded-full border-2 flex items-center justify-center ${index === 0 ? 'border-rose-500 bg-rose-500' : 'border-zinc-600'}">
-                            <span class="w-1.5 h-1.5 rounded-full bg-white ${index === 0 ? '' : 'hidden'}"></span>
+                    <div class="flex items-center gap-2.5">
+                        <div class="radio-circle w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${index === 0 ? 'border-rose-500 bg-rose-500' : 'border-zinc-600'}">
+                            <span class="w-1 h-1 rounded-full bg-white ${index === 0 ? '' : 'hidden'}"></span>
                         </div>
                         <div>
                             <div class="font-bold text-xs sm:text-sm text-white">${opt.label}</div>
-                            <div class="text-[10px] text-zinc-500 mt-0.5 font-mono">Format: .${opt.format.toUpperCase()} (${opt.bitrate})</div>
+                            <div class="text-[10px] text-zinc-500 font-mono">Format: .${opt.format.toUpperCase()} (${opt.bitrate})</div>
                         </div>
                     </div>
-                    <div class="audio-size font-mono text-xs font-semibold text-zinc-300">
+                    <div class="audio-size font-mono text-xs font-semibold text-zinc-400">
                         ${dynamicSize}
                     </div>
                 `;
@@ -412,17 +423,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.querySelectorAll('#audioList .audio-row').forEach(c => {
                         c.classList.remove('border-rose-500', 'bg-rose-500/10', 'shadow-sm');
                         c.classList.add('border-white/[0.08]');
-                        c.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-zinc-600 flex items-center justify-center';
+                        c.querySelector('.radio-circle').className = 'radio-circle w-3.5 h-3.5 rounded-full border-2 border-zinc-600 flex items-center justify-center';
                         c.querySelector('.radio-circle span').classList.add('hidden');
                     });
 
                     card.classList.remove('border-white/[0.08]');
                     card.classList.add('border-rose-500', 'bg-rose-500/10', 'shadow-sm');
-                    card.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-rose-500 bg-rose-500 flex items-center justify-center';
+                    card.querySelector('.radio-circle').className = 'radio-circle w-3.5 h-3.5 rounded-full border-2 border-rose-500 bg-rose-500 flex items-center justify-center';
                     card.querySelector('.radio-circle span').classList.remove('hidden');
 
                     selectedAudio = opt;
-                    updateDownloadSummary();
+                    setDownloadMode('audio');
                 });
 
                 audioList.appendChild(card);
@@ -431,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Dynamic Size Updates when duration changes
+    // Dynamic Size Updates
     function updateOptionSizes() {
         if (!currentVideoData) return;
         const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
@@ -454,27 +465,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    // Segmented Mode Switching
-    tabVideo.addEventListener('click', () => {
-        selectedMode = 'video';
-        tabVideo.className = 'py-2.5 rounded-lg flex items-center justify-center gap-2 bg-dark-800 text-white shadow-md transition-all';
-        tabAudio.className = 'py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200 transition-all';
-        videoPane.classList.remove('hidden');
-        audioPane.classList.add('hidden');
-        updateDownloadSummary();
-    });
-
-    tabAudio.addEventListener('click', () => {
-        selectedMode = 'audio';
-        tabAudio.className = 'py-2.5 rounded-lg flex items-center justify-center gap-2 bg-dark-800 text-white shadow-md transition-all';
-        tabVideo.className = 'py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200 transition-all';
-        audioPane.classList.remove('hidden');
-        videoPane.classList.add('hidden');
-        updateDownloadSummary();
-    });
-
-    videoFormatSelect.addEventListener('change', updateDownloadSummary);
 
     // Toggle Clipping Button
     clipToggleBtn.addEventListener('click', () => {
@@ -573,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Clicking anywhere on track jumps the nearest handle
+    // Clicking track jumps nearest handle
     timelineTrack.addEventListener('click', (e) => {
         if (e.target === startHandle || e.target === endHandle || startHandle.contains(e.target) || endHandle.contains(e.target)) return;
         if (totalDuration <= 0) return;
@@ -581,7 +571,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const frac = getTrackFraction(e.clientX);
         const clickSec = Math.round(frac * totalDuration);
 
-        // Distance to start and end
         const distStart = Math.abs(clickSec - startSeconds);
         const distEnd = Math.abs(clickSec - endSeconds);
 
@@ -613,14 +602,8 @@ document.addEventListener('DOMContentLoaded', () => {
         startTimeInput.value = formatSeconds(startSeconds);
         endTimeInput.value = formatSeconds(endSeconds);
 
-        startSecLabel.textContent = `${Math.floor(startSeconds)}s`;
-        endSecLabel.textContent = `${Math.floor(endSeconds)}s`;
-
         const clipSecs = Math.max(1, endSeconds - startSeconds);
-        clipDurationDisplay.textContent = formatSeconds(clipSecs);
-
-        const pctOfTotal = Math.round((clipSecs / totalDuration) * 100);
-        activeSelectionMetrics.textContent = `${formatSeconds(startSeconds)} ➔ ${formatSeconds(endSeconds)} (${clipSecs}s • ${pctOfTotal}% of total)`;
+        activeSelectionMetrics.textContent = `${formatSeconds(startSeconds)} ➔ ${formatSeconds(endSeconds)} (${clipSecs}s)`;
     }
 
     // Steppers for Start and End points
@@ -669,41 +652,25 @@ document.addEventListener('DOMContentLoaded', () => {
         updateOptionSizes();
     });
 
-    // Preset Chips
-    document.querySelectorAll('.preset-tag').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const preset = btn.dataset.preset;
-            startSeconds = 0;
-
-            if (preset === 'full') {
-                endSeconds = totalDuration;
-            } else {
-                const targetSec = parseFloat(preset) || 30;
-                endSeconds = Math.min(totalDuration, targetSec);
-            }
-
-            syncScrubberPositions();
-            updateDownloadSummary();
-            updateOptionSizes();
-        });
-    });
-
     function updateDownloadSummary() {
         if (!currentVideoData) return;
 
         let summary = "";
+        let btnText = "";
         const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
 
         if (selectedMode === 'video') {
-            const res = selectedResolution ? selectedResolution.resolution : 'Best';
+            const res = selectedResolution ? selectedResolution.resolution : '1080p';
             const fmt = videoFormatSelect.value.toUpperCase();
             const est = selectedResolution ? formatBytes(Math.round(activeDuration * selectedResolution.bytes_per_sec)) : '';
-            summary = `${res} (${fmt}) • ~${est}`;
+            summary = `Video: ${res} (${fmt}) • ~${est}`;
+            btnText = isClippingEnabled ? `Download ${formatSeconds(activeDuration)} Video Clip (${res})` : `Download Video (${res} ${fmt})`;
         } else {
             const fmt = selectedAudio ? selectedAudio.format.toUpperCase() : 'MP3';
             const bit = selectedAudio ? selectedAudio.bitrate : '320k';
             const est = selectedAudio ? formatBytes(Math.round(activeDuration * selectedAudio.bytes_per_sec)) : '';
-            summary = `${fmt} Audio (${bit}) • ~${est}`;
+            summary = `Audio: ${fmt} (${bit}) • ~${est}`;
+            btnText = isClippingEnabled ? `Download ${formatSeconds(activeDuration)} Audio Clip (${fmt})` : `Download Audio (${fmt} ${bit})`;
         }
 
         if (isClippingEnabled) {
@@ -711,6 +678,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         downloadTargetSummary.textContent = summary;
+        btnDownloadText.textContent = btnText;
     }
 
     // ==========================================
@@ -719,11 +687,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetDownloadButton() {
         startDownloadBtn.disabled = false;
-        btnDownloadText.textContent = "Download to Computer";
+        updateDownloadSummary();
     }
 
     function openProgressModal() {
-        modalTitle.textContent = "Downloading Media";
+        modalTitle.textContent = selectedMode === 'video' ? "Downloading Video" : "Downloading Audio";
         modalStage.textContent = "Connecting to stream server...";
         modalProgressFill.style.width = "0%";
         statPct.textContent = "0%";
@@ -761,9 +729,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const payload = {
             url: currentVideoData.url,
-            type: selectedMode,
+            type: selectedMode, // Strictly 'video' or 'audio'
             height: selectedMode === 'video' ? selectedResolution?.height : null,
-            format: selectedMode === 'video' ? videoFormatSelect.value : selectedAudio?.format,
+            format: selectedMode === 'video' ? videoFormatSelect.value : (selectedAudio ? selectedAudio.format : 'mp3'),
             audio_bitrate: selectedAudio ? selectedAudio.bitrate : '320k',
             start_time: isClippingEnabled ? startSeconds : null,
             end_time: isClippingEnabled ? endSeconds : null,
@@ -852,8 +820,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (downloadTriggered) return;
         downloadTriggered = true;
 
-        modalTitle.textContent = "Download Ready!";
-        modalStage.textContent = "Media converted and ready for your device.";
+        modalTitle.textContent = "Download Ready";
+        modalStage.textContent = "Media converted successfully.";
         readyFileName.textContent = task.filename || "media_file";
         modalProgressFill.style.width = "100%";
         statPct.textContent = "100%";
@@ -893,7 +861,7 @@ document.addEventListener('DOMContentLoaded', () => {
     modalRetryBtn.addEventListener('click', closeProgressModal);
 
     // ==========================================
-    // DOWNLOADS HISTORY MANAGER (LOCALSTORAGE)
+    // DOWNLOADS HISTORY MANAGER
     // ==========================================
 
     function getHistory() {
@@ -932,7 +900,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const list = getHistory();
         historyList.innerHTML = '';
         if (list.length === 0) {
-            historyList.innerHTML = '<div class="text-center py-8 text-xs text-zinc-500">No downloads saved in this session yet.</div>';
+            historyList.innerHTML = '<div class="text-center py-8 text-xs text-zinc-500">No downloads saved in this session.</div>';
             return;
         }
 

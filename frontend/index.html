@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TubeHarvest Pro — High-Speed YouTube & Clip Downloader</title>
+    <title>TubeHarvest — Minimalist Media & Clip Engine</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -13,16 +13,17 @@
                 extend: {
                     colors: {
                         dark: {
-                            950: '#090a0f',
+                            950: '#08090d',
                             900: '#0e1017',
-                            850: '#141620',
-                            800: '#1b1e2b',
-                            700: '#282c3f',
+                            850: '#141622',
+                            800: '#1c1f2e',
+                            700: '#2b2f44',
                         },
-                        brand: {
-                            500: '#f43f5e',
-                            600: '#e11d48',
-                            700: '#be123c',
+                        cyber: {
+                            rose: '#f43f5e',
+                            glow: '#e11d48',
+                            cyan: '#06b6d4',
+                            violet: '#8b5cf6',
                         }
                     }
                 }
@@ -32,102 +33,98 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         
+        /* Subtle glow effects */
+        .cyber-glow {
+            box-shadow: 0 0 35px -5px rgba(244, 63, 94, 0.25);
+        }
+        .cyber-border {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .cyber-card {
+            background: rgba(14, 16, 23, 0.92);
+            backdrop-filter: blur(16px);
+        }
+
         /* Custom scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #0e1017;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #282c3f;
-            border-radius: 9999px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #e11d48;
-        }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #08090d; }
+        ::-webkit-scrollbar-thumb { background: #2b2f44; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #f43f5e; }
     </style>
 </head>
 <body class="bg-dark-950 text-zinc-100 min-h-screen flex flex-col justify-between items-center antialiased selection:bg-rose-500/30 selection:text-rose-200">
-    <!-- Top Nav Header -->
-    <header class="w-full border-b border-white/[0.07] bg-dark-950/80 backdrop-blur-xl sticky top-0 z-40">
+    <!-- Top Futuristic Header -->
+    <header class="w-full border-b border-white/[0.06] bg-dark-950/80 backdrop-blur-2xl sticky top-0 z-40">
         <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
             <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-600 via-rose-500 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-rose-600/25">
-                    <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-rose-600 via-rose-500 to-pink-500 flex items-center justify-center text-white shadow-md shadow-rose-600/30">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
                         <polygon points="6 4 20 12 6 20 6 4"></polygon>
                     </svg>
                 </div>
                 <div class="flex items-center gap-2">
-                    <span class="text-lg font-bold tracking-tight text-white">TubeHarvest</span>
-                    <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400">PRO</span>
+                    <span class="text-base font-bold tracking-tight text-white">TubeHarvest</span>
+                    <span class="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-zinc-400">PRO</span>
                 </div>
             </div>
 
-            <!-- Utility Quick Actions in Header -->
-            <div class="flex items-center gap-2 sm:gap-3">
-                <div class="hidden sm:flex items-center gap-2 text-xs text-zinc-400 bg-dark-900 border border-white/[0.08] px-3 py-1.5 rounded-full">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span class="font-medium text-zinc-300">Engine Active • Up to 8K</span>
-                </div>
+            <div class="flex items-center gap-3">
                 <button 
                     type="button" 
                     id="historyBtn" 
                     class="flex items-center gap-1.5 px-3 py-1.5 bg-dark-900 hover:bg-dark-850 border border-white/[0.08] hover:border-zinc-700 text-zinc-300 hover:text-white text-xs font-semibold rounded-xl transition-all shadow-sm"
-                    title="View Recent Downloads"
+                    title="Recent Downloads"
                 >
                     <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <span>History</span>
+                    <span>Downloads</span>
                     <span id="historyBadge" class="hidden ml-1 px-1.5 py-0.2 rounded-full bg-rose-500 text-[10px] font-mono font-bold text-white leading-tight">0</span>
                 </button>
             </div>
         </div>
     </header>
 
-    <!-- Main Workspace Container -->
-    <main class="w-full max-w-4xl px-4 py-8 sm:py-10 flex-1 flex flex-col items-center">
-        <!-- Hero Header -->
-        <div class="text-center mb-8 space-y-2.5 max-w-xl mx-auto">
-            <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
-                Download YouTube in <br class="hidden sm:block"/>
-                <span class="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-pink-400 to-amber-300">Peak Master Quality</span>
+    <!-- Main Content Area -->
+    <main class="w-full max-w-3xl px-4 py-8 sm:py-12 flex-1 flex flex-col items-center">
+        <!-- Minimal Hero -->
+        <div class="text-center mb-8 space-y-2">
+            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
+                Ultra-Clean <span class="text-transparent bg-clip-text bg-gradient-to-r from-rose-500 via-pink-400 to-amber-300">Media Extraction</span>
             </h1>
-            <p class="text-sm sm:text-base text-zinc-400">
-                Direct local downloads with uncapped 8K/4K resolutions, studio 320k audio, and interactive real-time timeline clipping.
+            <p class="text-xs sm:text-sm text-zinc-400">
+                Uncapped 8K & 4K video, universal AAC sound, studio MP3 audio, and precision clipping.
             </p>
         </div>
 
-        <!-- URL Input Card -->
-        <div class="w-full bg-dark-900/95 border border-white/[0.08] rounded-2xl p-5 sm:p-7 shadow-2xl shadow-black/50 mb-8 backdrop-blur-xl">
+        <!-- Futuristic URL Input Bar -->
+        <div class="w-full cyber-card cyber-border rounded-2xl p-4 sm:p-5 shadow-2xl mb-6">
             <form id="urlForm" class="flex flex-col sm:flex-row gap-3">
                 <div class="relative flex-1">
                     <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
                         </svg>
                     </div>
                     <input 
                         type="url" 
                         id="videoUrl" 
-                        placeholder="Paste YouTube link (Videos, Shorts, Live replays)..." 
+                        placeholder="Paste YouTube video or Shorts link here..." 
                         required
                         autocomplete="off"
-                        class="w-full pl-11 pr-24 py-3.5 bg-dark-950 border border-white/[0.08] rounded-xl text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 transition-all shadow-inner"
+                        class="w-full pl-10 pr-24 py-3 bg-dark-950 border border-white/[0.08] rounded-xl text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500/30 transition-all font-mono"
                     >
                     <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                         <button 
                             type="button" 
                             id="clearUrlBtn" 
                             class="hidden p-1 text-zinc-500 hover:text-zinc-300 rounded transition-colors"
-                            title="Clear input"
+                            title="Clear"
                         >
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path d="M6 18L18 6M6 6l12 12"></path>
@@ -146,31 +143,15 @@
                 <button 
                     type="submit" 
                     id="fetchBtn" 
-                    class="px-7 py-3.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-[0.98] text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-rose-600/30 flex items-center justify-center gap-2 whitespace-nowrap"
+                    class="px-6 py-3 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-[0.98] text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-rose-600/25 flex items-center justify-center gap-2 whitespace-nowrap"
                 >
-                    <span id="fetchBtnText">Fetch Media</span>
+                    <span id="fetchBtnText">Fetch</span>
                     <span id="fetchSpinner" class="hidden w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                 </button>
             </form>
 
-            <!-- Quick Utilities & Test Links -->
-            <div class="flex items-center justify-between gap-3 mt-4 pt-3.5 border-t border-white/[0.06] text-xs text-zinc-400 flex-wrap">
-                <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-zinc-500">Quick Test:</span>
-                    <button type="button" class="sample-chip px-2.5 py-1 bg-dark-950 hover:bg-dark-850 border border-white/[0.08] hover:border-zinc-700 text-zinc-300 rounded-lg transition-colors" data-url="https://www.youtube.com/watch?v=aqz-KE-bpKQ">
-                        4K 60fps Demo
-                    </button>
-                    <button type="button" class="sample-chip px-2.5 py-1 bg-dark-950 hover:bg-dark-850 border border-white/[0.08] hover:border-zinc-700 text-zinc-300 rounded-lg transition-colors" data-url="https://www.youtube.com/watch?v=jNQXAC9IVRw">
-                        Short Clip Demo
-                    </button>
-                </div>
-                <div class="text-[11px] text-zinc-500 font-mono hidden sm:block">
-                    Press <kbd class="px-1.5 py-0.5 bg-dark-800 rounded border border-zinc-700 text-zinc-300 font-semibold">Enter ↵</kbd> to fetch
-                </div>
-            </div>
-
             <!-- Error Banner -->
-            <div id="errorAlert" class="hidden mt-4 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs flex items-center justify-between">
+            <div id="errorAlert" class="hidden mt-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <circle cx="12" cy="12" r="10"></circle>
@@ -179,35 +160,34 @@
                     </svg>
                     <span id="errorMessage">Error loading video.</span>
                 </div>
-                <button type="button" id="closeError" class="text-red-400 hover:text-red-200 text-lg leading-none font-bold ml-2">&times;</button>
+                <button type="button" id="closeError" class="text-red-400 hover:text-red-200 text-lg leading-none font-bold">&times;</button>
             </div>
         </div>
 
         <!-- Video Configuration Card (Hidden until video fetched) -->
-        <div id="detailsCard" class="hidden w-full bg-dark-900/95 border border-white/[0.08] rounded-2xl p-5 sm:p-7 shadow-2xl shadow-black/50 space-y-6 backdrop-blur-xl">
-            <!-- Video Info Header & Utilities -->
-            <div class="flex flex-col sm:flex-row gap-5 items-start pb-6 border-b border-white/[0.08]">
-                <!-- Thumbnail Container -->
-                <div class="relative w-full sm:w-60 aspect-video rounded-xl overflow-hidden bg-black flex-shrink-0 border border-white/[0.1] shadow-lg group">
-                    <img id="videoThumb" src="" alt="Thumbnail" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
-                    <span id="videoDuration" class="absolute bottom-2 right-2 px-2 py-0.5 bg-black/85 font-mono text-xs font-bold text-white rounded-md shadow-sm border border-white/10">00:00</span>
+        <div id="detailsCard" class="hidden w-full cyber-card cyber-border rounded-2xl p-5 sm:p-6 shadow-2xl space-y-6">
+            <!-- Video Meta Header -->
+            <div class="flex flex-col sm:flex-row gap-4 items-start pb-5 border-b border-white/[0.07]">
+                <!-- Thumbnail -->
+                <div class="relative w-full sm:w-52 aspect-video rounded-xl overflow-hidden bg-black flex-shrink-0 border border-white/[0.08] shadow-md group">
+                    <img id="videoThumb" src="" alt="Thumbnail" class="w-full h-full object-cover">
+                    <span id="videoDuration" class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/85 font-mono text-[11px] font-bold text-white rounded shadow-sm border border-white/10">00:00</span>
                     <!-- Quick In-App Preview Button -->
                     <button 
                         type="button" 
                         id="togglePreviewBtn" 
                         class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 text-white font-semibold text-xs transition-opacity"
+                        title="Watch Preview"
                     >
-                        <div class="w-10 h-10 rounded-full bg-rose-600/90 flex items-center justify-center shadow-lg shadow-rose-600/50">
-                            <svg class="w-5 h-5 fill-current ml-0.5" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        <div class="w-9 h-9 rounded-full bg-rose-600 flex items-center justify-center shadow-lg shadow-rose-600/50">
+                            <svg class="w-4 h-4 fill-current ml-0.5" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                         </div>
                     </button>
                 </div>
 
-                <!-- Video Meta & Action Toolbar -->
-                <div class="flex-1 min-w-0 space-y-2.5">
-                    <div class="flex items-start justify-between gap-3">
-                        <h2 id="videoTitle" class="text-base sm:text-xl font-bold text-white line-clamp-2 leading-snug">Video Title</h2>
-                    </div>
+                <!-- Info & Utility Actions -->
+                <div class="flex-1 min-w-0 space-y-2">
+                    <h2 id="videoTitle" class="text-base font-bold text-white line-clamp-2 leading-snug">Video Title</h2>
                     
                     <div class="flex items-center gap-2 text-xs text-zinc-400">
                         <span id="videoChannel" class="font-medium text-zinc-300 truncate">Channel</span>
@@ -215,19 +195,27 @@
                         <span id="videoViews" class="font-mono">0 views</span>
                     </div>
 
-                    <!-- Quality Badges -->
-                    <div class="flex flex-wrap gap-2 pt-1">
-                        <span id="maxResBadge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/15 border border-rose-500/30 text-rose-400">Max: 4K 2160p</span>
-                        <span class="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-dark-800 border border-white/[0.08] text-zinc-300">Uncapped Streams</span>
-                        <span class="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-dark-800 border border-white/[0.08] text-zinc-300">Fast Remux</span>
-                    </div>
+                    <!-- Futuristic Utilities Toolbar -->
+                    <div class="flex flex-wrap items-center gap-2 pt-2">
+                        <!-- Full HD Thumbnail Downloader Button -->
+                        <button 
+                            type="button" 
+                            id="downloadThumbBtn" 
+                            class="px-2.5 py-1.5 bg-dark-800 hover:bg-dark-700 border border-white/[0.08] hover:border-zinc-600 text-rose-300 hover:text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5"
+                            title="Download YouTube Thumbnail in Maximum Available Resolution (1080p)"
+                        >
+                            <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                <polyline points="21 15 16 10 5 21"></polyline>
+                            </svg>
+                            <span>Download HD Thumbnail</span>
+                        </button>
 
-                    <!-- Utilities Toolbar (Copy Link, Open on YT, Reset) -->
-                    <div class="flex items-center gap-2 pt-2 border-t border-white/[0.05]">
                         <button 
                             type="button" 
                             id="copyUrlBtn" 
-                            class="px-2.5 py-1 bg-dark-950 hover:bg-dark-800 border border-white/[0.08] hover:border-zinc-700 text-zinc-300 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5"
+                            class="px-2.5 py-1.5 bg-dark-950 hover:bg-dark-800 border border-white/[0.08] hover:border-zinc-700 text-zinc-300 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5"
                             title="Copy Video URL"
                         >
                             <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -236,12 +224,13 @@
                             </svg>
                             <span id="copyUrlText">Copy Link</span>
                         </button>
+
                         <a 
                             id="openYtLink" 
                             href="#" 
                             target="_blank" 
                             rel="noopener noreferrer" 
-                            class="px-2.5 py-1 bg-dark-950 hover:bg-dark-800 border border-white/[0.08] hover:border-zinc-700 text-zinc-300 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5"
+                            class="px-2.5 py-1.5 bg-dark-950 hover:bg-dark-800 border border-white/[0.08] hover:border-zinc-700 text-zinc-300 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5"
                             title="Open on YouTube"
                         >
                             <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -249,19 +238,8 @@
                                 <polyline points="15 3 21 3 21 9"></polyline>
                                 <line x1="10" y1="14" x2="21" y2="3"></line>
                             </svg>
-                            <span>Open on YouTube</span>
+                            <span>Open</span>
                         </a>
-                        <button 
-                            type="button" 
-                            id="resetFetchBtn" 
-                            class="px-2.5 py-1 bg-dark-950 hover:bg-dark-800 border border-white/[0.08] hover:border-zinc-700 text-zinc-400 hover:text-zinc-200 text-xs font-medium rounded-lg transition-colors ml-auto flex items-center gap-1"
-                            title="Fetch New Video"
-                        >
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                            </svg>
-                            <span>New</span>
-                        </button>
                     </div>
                 </div>
             </div>
@@ -269,33 +247,33 @@
             <!-- In-App Preview Player Box (Collapsible) -->
             <div id="playerPreviewBox" class="hidden bg-dark-950 border border-white/[0.08] rounded-xl p-3 space-y-2">
                 <div class="flex items-center justify-between text-xs text-zinc-400 px-1">
-                    <span class="font-medium text-white flex items-center gap-1.5">
+                    <span class="font-medium text-white flex items-center gap-1.5 font-mono">
                         <span class="w-2 h-2 rounded-full bg-rose-500"></span>
-                        In-App Video Preview Player
+                        Player Preview
                     </span>
-                    <button type="button" id="closePreviewBtn" class="text-zinc-500 hover:text-white font-bold">&times; Close Preview</button>
+                    <button type="button" id="closePreviewBtn" class="text-zinc-500 hover:text-white font-bold">&times; Close</button>
                 </div>
                 <div class="relative w-full aspect-video rounded-lg overflow-hidden bg-black">
                     <iframe id="previewIframe" src="" class="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
                 </div>
             </div>
 
-            <!-- Segmented Mode Tabs (Video vs Audio) -->
-            <div class="grid grid-cols-2 p-1.5 bg-dark-950 border border-white/[0.08] rounded-xl text-sm font-semibold">
-                <button type="button" id="tabVideo" class="py-2.5 rounded-lg flex items-center justify-center gap-2 bg-dark-800 text-white shadow-md transition-all">
-                    <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <!-- UNAMBIGUOUS FUTURISTIC MODE SELECTOR -->
+            <div class="grid grid-cols-2 p-1 bg-dark-950 border border-white/[0.08] rounded-xl text-xs sm:text-sm font-bold tracking-wide">
+                <button type="button" id="tabVideo" class="py-2.5 rounded-lg flex items-center justify-center gap-2 bg-rose-600 text-white shadow-md transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <polygon points="23 7 16 12 23 17 23 7"></polygon>
                         <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
                     </svg>
-                    <span>Video (MP4 / MKV / WebM)</span>
+                    <span>VIDEO</span>
                 </button>
                 <button type="button" id="tabAudio" class="py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200 transition-all">
-                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path d="M9 18V5l12-2v13"></path>
                         <circle cx="6" cy="18" r="3"></circle>
                         <circle cx="18" cy="16" r="3"></circle>
                     </svg>
-                    <span>Audio Only (MP3 / M4A / FLAC)</span>
+                    <span>AUDIO ONLY</span>
                 </button>
             </div>
 
@@ -304,34 +282,34 @@
                 <div class="flex items-center justify-between text-xs text-zinc-400">
                     <span class="font-medium text-zinc-300">Select Resolution (Uncapped):</span>
                     <div class="flex items-center gap-2">
-                        <span>Container:</span>
-                        <select id="videoFormatSelect" class="bg-dark-950 border border-white/[0.08] text-zinc-200 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-rose-500">
-                            <option value="mp4" selected>MP4 (Universal)</option>
-                            <option value="mkv">MKV (Matroska)</option>
-                            <option value="webm">WebM (VP9/AV1)</option>
+                        <span>Format:</span>
+                        <select id="videoFormatSelect" class="bg-dark-950 border border-white/[0.08] text-zinc-200 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-rose-500 font-mono">
+                            <option value="mp4" selected>MP4 (Universal AAC)</option>
+                            <option value="mkv">MKV</option>
+                            <option value="webm">WebM</option>
                         </select>
                     </div>
                 </div>
 
-                <div id="resolutionsList" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
+                <div id="resolutionsList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
                     <!-- Populated via JS -->
                 </div>
             </div>
 
             <!-- Audio Format Pane -->
             <div id="audioPane" class="hidden space-y-3">
-                <div class="text-xs text-zinc-400 font-medium">Select Audio Format & Quality:</div>
-                <div id="audioList" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div class="text-xs text-zinc-400 font-medium">Select Audio Quality:</div>
+                <div id="audioList" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <!-- Populated via JS -->
                 </div>
             </div>
 
-            <!-- INTERACTIVE TIMELINE SCRUBBER & CLIPPING SECTION -->
-            <div class="pt-5 border-t border-white/[0.08] space-y-4">
-                <div class="flex items-center justify-between bg-dark-950 border border-white/[0.08] p-4 rounded-xl">
-                    <div class="flex items-center gap-3.5">
-                        <div class="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center flex-shrink-0 shadow-sm">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <!-- INTERACTIVE TIMELINE CLIPPING -->
+            <div class="pt-4 border-t border-white/[0.07] space-y-4">
+                <div class="flex items-center justify-between bg-dark-950 border border-white/[0.08] p-3.5 rounded-xl">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <circle cx="6" cy="6" r="3"></circle>
                                 <circle cx="6" cy="18" r="3"></circle>
                                 <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
@@ -340,11 +318,10 @@
                             </svg>
                         </div>
                         <div>
-                            <div class="text-sm font-bold text-white flex items-center gap-2">
+                            <div class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                                 <span>Clip Specific Segment</span>
-                                <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-semibold">Interactive Scrubber</span>
                             </div>
-                            <div class="text-xs text-zinc-400 mt-0.5">Use the dual timeline slider or enter exact timestamps below</div>
+                            <div class="text-[11px] text-zinc-400">Download an exact cut using the slider</div>
                         </div>
                     </div>
 
@@ -352,46 +329,40 @@
                     <button 
                         type="button" 
                         id="clipToggleBtn" 
-                        class="w-12 h-6 rounded-full bg-dark-800 border border-zinc-700 relative transition-colors focus:outline-none flex-shrink-0"
+                        class="w-11 h-6 rounded-full bg-dark-800 border border-zinc-700 relative transition-colors focus:outline-none flex-shrink-0"
                     >
                         <span id="clipToggleThumb" class="w-4 h-4 rounded-full bg-zinc-400 absolute top-1 left-1 transition-all"></span>
                     </button>
                 </div>
 
                 <!-- Expanded Trimmer Controls -->
-                <div id="trimmerPanel" class="hidden bg-dark-950 border border-white/[0.08] rounded-xl p-5 space-y-5">
-                    
-                    <!-- REAL-TIME INTERACTIVE TIMELINE SCRUBBER -->
+                <div id="trimmerPanel" class="hidden bg-dark-950 border border-white/[0.08] rounded-xl p-4 space-y-4">
+                    <!-- Real-Time Scrubber -->
                     <div class="space-y-2 select-none">
-                        <div class="flex items-center justify-between text-xs text-zinc-400">
-                            <span class="font-medium text-zinc-300">Drag Handles to Adjust Cut Window:</span>
-                            <span id="activeSelectionMetrics" class="font-mono text-rose-400 font-semibold">00:00 ➔ 00:00 (0s)</span>
+                        <div class="flex items-center justify-between text-xs text-zinc-400 font-mono">
+                            <span class="text-zinc-300 font-sans text-xs">Slide Handles:</span>
+                            <span id="activeSelectionMetrics" class="text-rose-400 font-bold">00:00 ➔ 00:00 (0s)</span>
                         </div>
 
-                        <!-- Scrubber Track Wrapper -->
-                        <div class="relative py-6 select-none touch-none" id="timelineScrubber">
-                            <!-- Background Track Line -->
-                            <div class="w-full h-3 bg-dark-800 rounded-full relative overflow-visible cursor-pointer" id="timelineTrack">
-                                <!-- Active Highlighted Range -->
-                                <div id="timelineRange" class="absolute top-0 bottom-0 bg-gradient-to-r from-rose-500 to-pink-500 rounded-full shadow-lg shadow-rose-500/30" style="left: 0%; width: 100%;"></div>
+                        <!-- Scrubber Track -->
+                        <div class="relative py-5 select-none touch-none" id="timelineScrubber">
+                            <div class="w-full h-2.5 bg-dark-800 rounded-full relative overflow-visible cursor-pointer" id="timelineTrack">
+                                <div id="timelineRange" class="absolute top-0 bottom-0 bg-gradient-to-r from-rose-500 to-pink-500 rounded-full shadow-md shadow-rose-500/30" style="left: 0%; width: 100%;"></div>
 
                                 <!-- Left Handle (Start) -->
-                                <div id="startHandle" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 bg-white border-2 border-rose-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing flex items-center justify-center hover:scale-110 transition-transform z-20" style="left: 0%;">
+                                <div id="startHandle" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-white border-2 border-rose-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing flex items-center justify-center z-20" style="left: 0%;">
                                     <div class="w-1.5 h-1.5 rounded-full bg-rose-500"></div>
-                                    <!-- Tooltip -->
-                                    <div id="startTooltip" class="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-dark-900 border border-zinc-700 text-[10px] font-mono font-bold text-white rounded whitespace-nowrap shadow-md pointer-events-none">00:00</div>
+                                    <div id="startTooltip" class="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.2 bg-dark-900 border border-zinc-700 text-[10px] font-mono font-bold text-white rounded shadow pointer-events-none">00:00</div>
                                 </div>
 
                                 <!-- Right Handle (End) -->
-                                <div id="endHandle" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 bg-white border-2 border-rose-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing flex items-center justify-center hover:scale-110 transition-transform z-20" style="left: 100%;">
+                                <div id="endHandle" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-white border-2 border-rose-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing flex items-center justify-center z-20" style="left: 100%;">
                                     <div class="w-1.5 h-1.5 rounded-full bg-rose-500"></div>
-                                    <!-- Tooltip -->
-                                    <div id="endTooltip" class="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-dark-900 border border-zinc-700 text-[10px] font-mono font-bold text-white rounded whitespace-nowrap shadow-md pointer-events-none">00:00</div>
+                                    <div id="endTooltip" class="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.2 bg-dark-900 border border-zinc-700 text-[10px] font-mono font-bold text-white rounded shadow pointer-events-none">00:00</div>
                                 </div>
                             </div>
 
-                            <!-- Time Markers below track -->
-                            <div class="flex justify-between items-center text-[11px] font-mono text-zinc-500 mt-3 px-1">
+                            <div class="flex justify-between items-center text-[10px] font-mono text-zinc-500 mt-2.5 px-0.5">
                                 <span>00:00</span>
                                 <span id="timelineMidpoint">--:--</span>
                                 <span id="timelineTotal">--:--</span>
@@ -399,198 +370,155 @@
                         </div>
                     </div>
 
-                    <!-- Digital Inputs & Micro-steppers -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                    <!-- Digital Inputs & Steppers -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                         <!-- Start Point -->
-                        <div class="space-y-1.5">
-                            <div class="flex items-center justify-between text-xs text-zinc-400">
-                                <span class="font-bold text-zinc-300">START TIMESTAMP</span>
-                                <span id="startSecLabel" class="font-mono text-zinc-500 text-[11px]">0s</span>
-                            </div>
-                            <div class="flex items-center bg-dark-900 border border-white/[0.08] rounded-xl overflow-hidden focus-within:border-rose-500">
-                                <input 
-                                    type="text" 
-                                    id="startTimeInput" 
-                                    value="00:00:00" 
-                                    class="w-full bg-transparent px-3 py-2.5 text-center font-mono text-sm font-bold text-white outline-none"
-                                >
+                        <div class="space-y-1">
+                            <div class="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Start Time</div>
+                            <div class="flex items-center bg-dark-900 border border-white/[0.08] rounded-lg overflow-hidden">
+                                <input type="text" id="startTimeInput" value="00:00:00" class="w-full bg-transparent px-3 py-2 text-center font-mono text-xs font-bold text-white outline-none">
                                 <div class="flex border-l border-white/[0.08]">
-                                    <button type="button" class="step-btn px-2.5 py-2.5 hover:bg-dark-800 text-zinc-400 hover:text-white text-xs font-mono transition-colors" data-type="start" data-delta="-5">-5s</button>
-                                    <button type="button" class="step-btn px-2.5 py-2.5 hover:bg-dark-800 text-zinc-400 hover:text-white text-xs font-mono border-l border-white/[0.08] transition-colors" data-type="start" data-delta="5">+5s</button>
+                                    <button type="button" class="step-btn px-2 py-2 hover:bg-dark-800 text-zinc-400 hover:text-white text-xs font-mono" data-type="start" data-delta="-5">-5s</button>
+                                    <button type="button" class="step-btn px-2 py-2 hover:bg-dark-800 text-zinc-400 hover:text-white text-xs font-mono border-l border-white/[0.08]" data-type="start" data-delta="5">+5s</button>
                                 </div>
                             </div>
                         </div>
 
                         <!-- End Point -->
-                        <div class="space-y-1.5">
-                            <div class="flex items-center justify-between text-xs text-zinc-400">
-                                <span class="font-bold text-zinc-300">END TIMESTAMP</span>
-                                <span id="endSecLabel" class="font-mono text-zinc-500 text-[11px]">0s</span>
-                            </div>
-                            <div class="flex items-center bg-dark-900 border border-white/[0.08] rounded-xl overflow-hidden focus-within:border-rose-500">
-                                <input 
-                                    type="text" 
-                                    id="endTimeInput" 
-                                    value="00:00:00" 
-                                    class="w-full bg-transparent px-3 py-2.5 text-center font-mono text-sm font-bold text-white outline-none"
-                                >
+                        <div class="space-y-1">
+                            <div class="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">End Time</div>
+                            <div class="flex items-center bg-dark-900 border border-white/[0.08] rounded-lg overflow-hidden">
+                                <input type="text" id="endTimeInput" value="00:00:00" class="w-full bg-transparent px-3 py-2 text-center font-mono text-xs font-bold text-white outline-none">
                                 <div class="flex border-l border-white/[0.08]">
-                                    <button type="button" class="step-btn px-2.5 py-2.5 hover:bg-dark-800 text-zinc-400 hover:text-white text-xs font-mono transition-colors" data-type="end" data-delta="-5">-5s</button>
-                                    <button type="button" class="step-btn px-2.5 py-2.5 hover:bg-dark-800 text-zinc-400 hover:text-white text-xs font-mono border-l border-white/[0.08] transition-colors" data-type="end" data-delta="5">+5s</button>
+                                    <button type="button" class="step-btn px-2 py-2 hover:bg-dark-800 text-zinc-400 hover:text-white text-xs font-mono" data-type="end" data-delta="-5">-5s</button>
+                                    <button type="button" class="step-btn px-2 py-2 hover:bg-dark-800 text-zinc-400 hover:text-white text-xs font-mono border-l border-white/[0.08]" data-type="end" data-delta="5">+5s</button>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Presets & Live Metrics Banner -->
-                    <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/[0.08] text-xs">
-                        <div class="flex items-center gap-1.5 flex-wrap">
-                            <span class="text-zinc-500 font-medium">Quick Presets:</span>
-                            <button type="button" class="preset-tag px-2.5 py-1 bg-dark-900 hover:bg-dark-850 border border-white/[0.08] text-zinc-300 rounded-lg transition-colors font-medium" data-preset="full">Full Video</button>
-                            <button type="button" class="preset-tag px-2.5 py-1 bg-dark-900 hover:bg-dark-850 border border-white/[0.08] text-zinc-300 rounded-lg transition-colors font-medium" data-preset="15">15s</button>
-                            <button type="button" class="preset-tag px-2.5 py-1 bg-dark-900 hover:bg-dark-850 border border-white/[0.08] text-zinc-300 rounded-lg transition-colors font-medium" data-preset="30">30s</button>
-                            <button type="button" class="preset-tag px-2.5 py-1 bg-dark-900 hover:bg-dark-850 border border-white/[0.08] text-zinc-300 rounded-lg transition-colors font-medium" data-preset="60">1 Min</button>
-                        </div>
-                        <div class="px-3 py-1.5 bg-dark-900 border border-white/[0.08] rounded-xl font-mono text-zinc-300 flex items-center gap-2">
-                            <span>Clip Duration:</span>
-                            <strong id="clipDurationDisplay" class="text-rose-400">00:00</strong>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Download Action Footer -->
-            <div class="pt-6 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div class="text-xs sm:text-sm text-zinc-400 text-center sm:text-left">
-                    <span>Selected: </span>
-                    <strong id="downloadTargetSummary" class="text-white font-bold">1080p Full HD MP4</strong>
+            <!-- Primary Action Bar -->
+            <div class="pt-5 border-t border-white/[0.07] flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="text-xs text-zinc-400 text-center sm:text-left font-mono">
+                    <span class="text-zinc-500 font-sans">Target: </span>
+                    <strong id="downloadTargetSummary" class="text-white">1080p MP4</strong>
                 </div>
 
                 <button 
                     type="button" 
                     id="startDownloadBtn" 
-                    class="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-rose-600 via-rose-500 to-pink-600 hover:from-rose-500 hover:to-pink-500 active:scale-[0.98] text-white font-extrabold text-sm sm:text-base rounded-xl transition-all shadow-xl shadow-rose-600/30 flex items-center justify-center gap-3 disabled:opacity-50 disabled:pointer-events-none"
+                    class="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-[0.98] text-white font-bold text-sm rounded-xl transition-all shadow-xl shadow-rose-600/30 flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:pointer-events-none"
                 >
-                    <svg id="btnDownloadIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                    <svg id="btnDownloadIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="7 10 12 15 17 10"></polyline>
                         <line x1="12" y1="15" x2="12" y2="3"></line>
                     </svg>
-                    <span id="btnDownloadText">Download to Computer</span>
+                    <span id="btnDownloadText">Download Video</span>
                 </button>
             </div>
         </div>
     </main>
 
-    <!-- BULLETPROOF FIXED PROGRESS MODAL OVERLAY (NO NATIVE DIALOG QUIRKS) -->
+    <!-- PROGRESS MODAL OVERLAY -->
     <div id="progressModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 transition-all duration-200 hidden">
         <div class="w-full max-w-md bg-dark-900 border border-white/[0.1] rounded-2xl p-6 text-zinc-100 space-y-5 shadow-2xl relative">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2.5">
                     <div id="modalPulseDot" class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></div>
-                    <h3 id="modalTitle" class="text-base font-bold text-white">Downloading Media</h3>
+                    <h3 id="modalTitle" class="text-base font-bold text-white">Downloading</h3>
                 </div>
                 <button type="button" id="closeModalCross" class="text-zinc-400 hover:text-white text-xl leading-none">&times;</button>
             </div>
 
-            <!-- Single, Dedicated Progress Bar & Stage Label -->
+            <!-- Single, Monotonic Progress Bar -->
             <div class="space-y-2">
                 <div class="flex items-center justify-between text-xs text-zinc-400">
                     <span id="modalStage" class="font-medium truncate max-w-[280px]">Connecting to stream server...</span>
                     <span id="statPct" class="font-mono font-bold text-white">0%</span>
                 </div>
-                <div class="w-full h-3 bg-dark-950 rounded-full overflow-hidden border border-white/[0.08] p-0.5">
+                <div class="w-full h-2.5 bg-dark-950 rounded-full overflow-hidden border border-white/[0.08] p-0.5">
                     <div id="modalProgressFill" class="h-full bg-gradient-to-r from-rose-500 via-rose-400 to-pink-500 rounded-full transition-all duration-300" style="width: 0%;"></div>
                 </div>
             </div>
 
             <!-- Stats Grid -->
-            <div class="grid grid-cols-2 gap-2.5 text-center text-xs">
+            <div class="grid grid-cols-2 gap-2 text-center text-xs">
                 <div class="bg-dark-950 border border-white/[0.08] p-2.5 rounded-xl">
-                    <span class="block text-[10px] text-zinc-500 font-semibold uppercase">Download Speed</span>
-                    <span id="statSpeed" class="font-mono font-bold text-white text-sm">--</span>
+                    <span class="block text-[10px] text-zinc-500 font-semibold uppercase">Speed</span>
+                    <span id="statSpeed" class="font-mono font-bold text-white text-xs">--</span>
                 </div>
                 <div class="bg-dark-950 border border-white/[0.08] p-2.5 rounded-xl">
-                    <span class="block text-[10px] text-zinc-500 font-semibold uppercase">Estimated Time</span>
-                    <span id="statEta" class="font-mono font-bold text-white text-sm">--</span>
+                    <span class="block text-[10px] text-zinc-500 font-semibold uppercase">Time Left</span>
+                    <span id="statEta" class="font-mono font-bold text-white text-xs">--</span>
                 </div>
             </div>
 
             <!-- Ready State Box -->
-            <div id="modalReadyBox" class="hidden text-center pt-2 space-y-4">
-                <div class="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
-                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3">
+            <div id="modalReadyBox" class="hidden text-center pt-2 space-y-3">
+                <div class="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3">
                         <polyline points="20 6 9 17 4 12"></polyline>
                     </svg>
                 </div>
                 <div>
-                    <h4 class="text-base font-bold text-white">Download Ready!</h4>
-                    <p id="readyFileName" class="text-xs font-mono text-zinc-400 truncate max-w-xs mx-auto mt-1 px-2 py-1 bg-dark-950 rounded-lg border border-white/[0.05]">filename.mp4</p>
+                    <h4 class="text-sm font-bold text-white">Download Ready</h4>
+                    <p id="readyFileName" class="text-xs font-mono text-zinc-400 truncate max-w-xs mx-auto mt-0.5 px-2 py-1 bg-dark-950 rounded border border-white/[0.05]">filename.mp4</p>
                 </div>
-                <a id="btnSaveDirect" href="#" class="w-full py-3 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold text-xs sm:text-sm rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30" download>
+                <a id="btnSaveDirect" href="#" class="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-600/20" download>
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="7 10 12 15 17 10"></polyline>
                         <line x1="12" y1="15" x2="12" y2="3"></line>
                     </svg>
-                    <span>Click Here to Save File</span>
+                    <span>Click Here to Save</span>
                 </a>
-                <button type="button" id="modalDismissBtn" class="w-full py-2.5 bg-dark-800 hover:bg-dark-700 text-zinc-300 text-xs font-semibold rounded-xl">Close</button>
+                <button type="button" id="modalDismissBtn" class="w-full py-2 bg-dark-800 hover:bg-dark-700 text-zinc-300 text-xs font-semibold rounded-xl">Close</button>
             </div>
 
             <!-- Error State Box -->
             <div id="modalErrorBox" class="hidden text-center pt-2 space-y-3">
-                <div class="w-12 h-12 rounded-full bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                    </svg>
-                </div>
                 <div class="text-red-400 font-bold text-sm">Download Failed</div>
                 <p id="modalErrorMsg" class="text-xs text-zinc-400">An unexpected error occurred.</p>
-                <button type="button" id="modalRetryBtn" class="w-full py-2.5 bg-dark-800 hover:bg-dark-700 text-zinc-300 text-xs rounded-xl">Close</button>
+                <button type="button" id="modalRetryBtn" class="w-full py-2 bg-dark-800 hover:bg-dark-700 text-zinc-300 text-xs rounded-xl">Close</button>
             </div>
         </div>
     </div>
 
-    <!-- BULLETPROOF FIXED HISTORY MODAL OVERLAY -->
+    <!-- HISTORY MODAL OVERLAY -->
     <div id="historyModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 transition-all duration-200 hidden">
         <div class="w-full max-w-lg bg-dark-900 border border-white/[0.1] rounded-2xl p-6 text-zinc-100 space-y-4 shadow-2xl relative">
             <div class="flex items-center justify-between border-b border-white/[0.08] pb-3">
                 <div class="flex items-center gap-2">
-                    <svg class="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <h3 class="text-base font-bold text-white">Recent Downloads</h3>
+                    <h3 class="text-sm font-bold text-white">Recent Downloads</h3>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button type="button" id="clearHistoryBtn" class="text-xs text-zinc-500 hover:text-red-400 transition-colors">Clear History</button>
+                    <button type="button" id="clearHistoryBtn" class="text-xs text-zinc-500 hover:text-red-400 transition-colors">Clear</button>
                     <button type="button" id="closeHistoryBtn" class="text-zinc-400 hover:text-white text-xl leading-none ml-2">&times;</button>
                 </div>
             </div>
 
             <div id="historyList" class="space-y-2 max-h-80 overflow-y-auto pr-1">
-                <!-- Populated via JS -->
-                <div class="text-center py-8 text-xs text-zinc-500">No recent downloads yet.</div>
+                <div class="text-center py-8 text-xs text-zinc-500">No downloads saved in this session.</div>
             </div>
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="w-full border-t border-white/[0.06] py-6 text-center text-xs text-zinc-500 mt-8">
-        <div class="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <span><strong>TubeHarvest Pro</strong> • Open-Source Uncapped Media Downloader</span>
-            <div class="flex items-center gap-4">
-                <span>FFmpeg Powered</span>
-                <span>•</span>
-                <span>Self-Hostable</span>
-            </div>
+    <!-- Minimal Footer -->
+    <footer class="w-full border-t border-white/[0.06] py-5 text-center text-xs text-zinc-500">
+        <div class="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <span><strong>TubeHarvest</strong> • Minimalist Media Engine</span>
+            <span>Uncapped Audio & Video</span>
         </div>
     </footer>
 
     <!-- Scripts with cache busting -->
-    <script src="/static/js/utils.js?v=4.0"></script>
-    <script src="/static/js/app.js?v=4.0"></script>
+    <script src="/static/js/utils.js?v=5.0"></script>
+    <script src="/static/js/app.js?v=5.0"></script>
 </body>
 </html>
