@@ -98,7 +98,7 @@ class ProxyService:
             'socket_timeout': 15,
             'concurrent_fragment_downloads': 5,
         }
-        apply_anti_bot_options(ydl_opts, player_clients=['ios', 'android'])
+        apply_anti_bot_options(ydl_opts)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

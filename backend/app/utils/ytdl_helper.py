@@ -69,22 +69,21 @@ def apply_anti_bot_options(ydl_opts: Dict[str, Any], player_clients: Optional[Li
     Applies anti-bot spoofing, JS runtimes, and cookie configurations to ydl_opts.
     Bypasses YouTube's 'Sign in to confirm you're not a bot' on datacenter IPs (Render, AWS, etc.).
     """
-    if player_clients is not None:
-        if 'extractor_args' not in ydl_opts:
-            ydl_opts['extractor_args'] = {}
-        if 'youtube' not in ydl_opts['extractor_args']:
-            ydl_opts['extractor_args']['youtube'] = {}
-        ydl_opts['extractor_args']['youtube']['player_client'] = player_clients
+    if player_clients is None:
+        # visionos (Apple Vision Pro) has zero bot restrictions on datacenter IPs, followed by android and web
+        player_clients = ['visionos', 'android', 'web']
+
+    if 'extractor_args' not in ydl_opts:
+        ydl_opts['extractor_args'] = {}
+    if 'youtube' not in ydl_opts['extractor_args']:
+        ydl_opts['extractor_args']['youtube'] = {}
+    ydl_opts['extractor_args']['youtube']['player_client'] = player_clients
+
+    if 'http_headers' not in ydl_opts:
         ydl_opts['http_headers'] = {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
             'Accept-Language': 'en-US,en;q=0.9',
         }
-    else:
-        if 'http_headers' not in ydl_opts:
-            ydl_opts['http_headers'] = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9',
-            }
 
     ydl_opts['remote_components'] = {'ejs:github'}
 

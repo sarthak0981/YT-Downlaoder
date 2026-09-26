@@ -479,7 +479,7 @@ class DownloaderService:
                 if "Sign in to confirm you’re not a bot" in err_str or "confirm you're not a bot" in err_str or "bot" in err_str.lower():
                     logger.info("Bot verification detected during download. Retrying with mobile stream client...")
                     cls.update_task(task_id, stage="Bypassing cloud bot verification with mobile client...", progress=12.0)
-                    apply_anti_bot_options(ydl_opts, player_clients=['ios', 'android'])
+                    apply_anti_bot_options(ydl_opts, player_clients=['visionos', 'android'])
                     if download_type == "video":
                         ydl_opts['format'] = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best" if height else "bestvideo+bestaudio/best"
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl_fb:
