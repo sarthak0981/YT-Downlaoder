@@ -13,10 +13,23 @@ def clean_youtube_url(url: str) -> str:
         return f"https://www.youtube.com/watch?v={video_id}"
     return url
 
+# Typical realistic average bitrates (bits per second) for video + audio
+REALISTIC_BITRATES = {
+    4320: 38_000_000,  # 8K
+    2160: 16_000_000,  # 4K
+    1440: 8_000_000,   # 2K
+    1080: 3_500_000,   # Full HD
+    720: 1_800_000,    # HD
+    480: 800_000,      # SD
+    360: 450_000,      # 360p
+    240: 250_000,      # 240p
+    144: 150_000       # 144p
+}
+
 class YouTubeService:
     @staticmethod
     def get_ydl_opts(custom_opts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Base yt-dlp options configured for maximum format visibility."""
+        """Base yt-dlp options configured for safe, fast metadata extraction."""
         opts = {
             'quiet': True,
             'no_warnings': True,
@@ -24,7 +37,6 @@ class YouTubeService:
             'extract_flat': False,
             'socket_timeout': 20,
         }
-        # If node.js is available on system, enable it for deciphering signatures
         if shutil.which('node'):
             opts['js_runtimes'] = {'node': {}}
 
@@ -34,10 +46,6 @@ class YouTubeService:
 
     @classmethod
     def get_video_info(cls, url: str) -> Dict[str, Any]:
-        """
-        Fetches full metadata and formats for a YouTube video link.
-        Guarantees NO CAP on resolutions (exposes up to 8K / 4K if available).
-        """
         clean_url = clean_youtube_url(url)
         opts = cls.get_ydl_opts()
         
@@ -72,21 +80,14 @@ class YouTubeService:
             if sorted_thumbs:
                 best_thumbnail = sorted_thumbs[0].get('url') or best_thumbnail
 
-        duration = info.get('duration') or 0
+        duration = int(info.get('duration') or 0)
         formats = info.get('formats', [])
         
-        # Calculate best audio size
-        best_audio_size = 0
-        best_audio_bitrate = 0
-        for f in formats:
-            if f.get('vcodec') == 'none' and f.get('acodec') != 'none':
-                abr = f.get('abr') or 0
-                if abr > best_audio_bitrate:
-                    best_audio_bitrate = abr
-                    best_audio_size = f.get('filesize') or f.get('filesize_approx') or (duration * (abr * 1000 / 8) if duration else 0)
+        # Audio estimation: ~160kbps average AAC/Opus
+        audio_bps = (160 * 1000) / 8
+        best_audio_size = int(duration * audio_bps) if duration else 0
 
         # Parse and group video resolutions (NO CAP - 8K, 4K, 1440p, 1080p, 720p, etc.)
-        # Keyed by height so user gets clear options for each resolution
         resolutions_map = {}
         
         for f in formats:
@@ -120,21 +121,24 @@ class YouTubeService:
             fps_str = f" {int(fps)}fps" if fps and fps > 30 else ""
             display_title = f"{res_label}{fps_str} • {quality_tag}"
             
-            # Estimate file size
-            v_size = f.get('filesize') or f.get('filesize_approx')
-            if not v_size and duration and f.get('tbr'):
-                v_size = duration * (f.get('tbr') * 1000 / 8)
-                
-            total_size_estimate = 0
-            if v_size:
-                if f.get('acodec') == 'none':
-                    total_size_estimate = int(v_size + (best_audio_size or 0))
-                else:
-                    total_size_estimate = int(v_size)
+            # Calculate grounded realistic size
+            # Match closest height in realistic bitrates table
+            closest_h = min(REALISTIC_BITRATES.keys(), key=lambda h: abs(h - height))
+            expected_bps = (REALISTIC_BITRATES[closest_h] / 8)
+            
+            # Check if yt-dlp reported reasonable actual filesize
+            raw_v_size = f.get('filesize')
+            if raw_v_size and duration > 0:
+                actual_bps = raw_v_size / duration
+                # Only use if within 0.3x to 3x of realistic
+                if 0.3 * expected_bps < actual_bps < 3.0 * expected_bps:
+                    expected_bps = actual_bps + (audio_bps if f.get('acodec') == 'none' else 0)
 
-            # Store the highest fps/quality stream for each height
+            total_size_estimate = int(duration * expected_bps) if duration else 0
+
+            # Store the highest fps stream for each height
             existing = resolutions_map.get(height)
-            if not existing or (fps > existing['fps']) or (fps == existing['fps'] and total_size_estimate > (existing.get('raw_size') or 0)):
+            if not existing or (fps > existing['fps']):
                 resolutions_map[height] = {
                     'height': height,
                     'fps': fps,
@@ -142,54 +146,60 @@ class YouTubeService:
                     'label': display_title,
                     'quality_tag': quality_tag,
                     'ext': 'mp4',
+                    'bytes_per_sec': int(expected_bps),
                     'raw_size': total_size_estimate,
-                    'size_str': format_bytes(total_size_estimate) if total_size_estimate else "Best Quality",
+                    'size_str': format_bytes(total_size_estimate) if total_size_estimate else "Standard",
                     'format_id': f.get('format_id')
                 }
 
-        # Sort resolutions from highest to lowest (e.g. 4320 -> 2160 -> 1440 -> 1080 -> 720 -> 480 -> 360)
+        # Sort resolutions descending (e.g. 4320 -> 2160 -> 1440 -> 1080 -> 720 -> 480 -> 360)
         sorted_resolutions = sorted(
             resolutions_map.values(),
             key=lambda x: x['height'],
             reverse=True
         )
 
-        # Standard Audio Options
+        # Standard Audio Options with grounded sizes
         audio_options = [
             {
                 'id': 'mp3_320',
                 'format': 'mp3',
                 'label': 'MP3 Audio (High Quality 320 kbps)',
                 'bitrate': '320k',
-                'size_str': format_bytes(int(duration * (320 * 1000 / 8))) if duration else "High Quality"
+                'bytes_per_sec': int(320 * 1000 / 8),
+                'size_str': format_bytes(int(duration * (320 * 1000 / 8))) if duration else "~2.4 MB/min"
             },
             {
                 'id': 'mp3_192',
                 'format': 'mp3',
                 'label': 'MP3 Audio (Standard 192 kbps)',
                 'bitrate': '192k',
-                'size_str': format_bytes(int(duration * (192 * 1000 / 8))) if duration else "Standard Quality"
+                'bytes_per_sec': int(192 * 1000 / 8),
+                'size_str': format_bytes(int(duration * (192 * 1000 / 8))) if duration else "~1.4 MB/min"
             },
             {
                 'id': 'm4a',
                 'format': 'm4a',
-                'label': 'M4A / AAC (Original Audio Stream - Lossless Transfer)',
+                'label': 'M4A / AAC (Original YouTube Audio Stream)',
                 'bitrate': 'best',
-                'size_str': format_bytes(int(best_audio_size)) if best_audio_size else "Original Quality"
+                'bytes_per_sec': int(128 * 1000 / 8),
+                'size_str': format_bytes(int(duration * (128 * 1000 / 8))) if duration else "~1.0 MB/min"
             },
             {
                 'id': 'wav',
                 'format': 'wav',
                 'label': 'WAV Audio (Uncompressed Studio Lossless)',
                 'bitrate': 'uncompressed',
-                'size_str': format_bytes(int(duration * 176400)) if duration else "Uncompressed"
+                'bytes_per_sec': 176400,
+                'size_str': format_bytes(int(duration * 176400)) if duration else "Lossless"
             },
             {
                 'id': 'flac',
                 'format': 'flac',
                 'label': 'FLAC (Lossless Free Audio Codec)',
                 'bitrate': 'lossless',
-                'size_str': "Lossless"
+                'bytes_per_sec': 90000,
+                'size_str': format_bytes(int(duration * 90000)) if duration else "Lossless"
             }
         ]
 

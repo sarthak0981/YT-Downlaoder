@@ -1,9 +1,9 @@
 /**
- * TubeHarvest Pro - Premium Frontend Controller
+ * TubeHarvest Pro - Professional Frontend Controller
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // State
+    // Application State
     let currentVideoData = null;
     let selectedMode = 'video'; // 'video' | 'audio'
     let selectedResolution = null;
@@ -41,8 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const resolutionsList = document.getElementById('resolutionsList');
     const audioList = document.getElementById('audioList');
 
-    const trimmerToggleRow = document.getElementById('trimmerToggleRow');
-    const clipToggle = document.getElementById('clipToggle');
+    const clipToggleBtn = document.getElementById('clipToggleBtn');
+    const clipToggleThumb = document.getElementById('clipToggleThumb');
     const trimmerPanel = document.getElementById('trimmerPanel');
     const timelineHighlight = document.getElementById('timelineHighlight');
     const startTimeInput = document.getElementById('startTimeInput');
@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadTargetSummary = document.getElementById('downloadTargetSummary');
     const startDownloadBtn = document.getElementById('startDownloadBtn');
 
-    // Modal
+    // Modal Elements
     const progressModal = document.getElementById('progressModal');
     const modalTitle = document.getElementById('modalTitle');
     const modalStage = document.getElementById('modalStage');
@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalErrorMsg = document.getElementById('modalErrorMsg');
     const modalRetryBtn = document.getElementById('modalRetryBtn');
 
-    // Clipboard Paste
+    // Clipboard Paste Helper
     pasteBtn.addEventListener('click', async () => {
         try {
             const text = await navigator.clipboard.readText();
@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Sample Chips
+    // Sample Link Buttons
     document.querySelectorAll('.sample-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             videoUrlInput.value = btn.dataset.url;
@@ -92,21 +92,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Close Error Banner
+    // Error Alert Dismiss
     closeError.addEventListener('click', () => {
-        errorAlert.style.display = 'none';
+        errorAlert.classList.add('hidden');
     });
 
     function showError(msg) {
         errorMessage.textContent = msg;
-        errorAlert.style.display = 'flex';
+        errorAlert.classList.remove('hidden');
     }
 
     function hideError() {
-        errorAlert.style.display = 'none';
+        errorAlert.classList.add('hidden');
     }
 
-    // Form Submit
+    // Submit URL Form
     urlForm.addEventListener('submit', (e) => {
         e.preventDefault();
         triggerFetch();
@@ -117,10 +117,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!url) return;
 
         hideError();
-        detailsCard.classList.remove('active');
+        detailsCard.classList.add('hidden');
         fetchBtn.disabled = true;
-        fetchBtnText.style.display = 'none';
-        fetchSpinner.style.display = 'inline-block';
+        fetchBtnText.classList.add('hidden');
+        fetchSpinner.classList.remove('hidden');
 
         try {
             const res = await fetch('/api/info', {
@@ -136,14 +136,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             currentVideoData = data;
             populateUI(data);
-            detailsCard.classList.add('active');
+            detailsCard.classList.remove('hidden');
             detailsCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         } catch (err) {
-            showError(err.message || 'Error connecting to video service.');
+            showError(err.message || 'Failed to fetch video details.');
         } finally {
             fetchBtn.disabled = false;
-            fetchBtnText.style.display = 'inline-block';
-            fetchSpinner.style.display = 'none';
+            fetchBtnText.classList.remove('hidden');
+            fetchSpinner.classList.add('hidden');
         }
     }
 
@@ -158,122 +158,194 @@ document.addEventListener('DOMContentLoaded', () => {
         startSeconds = 0;
         endSeconds = totalDuration;
 
-        // Highest resolution badge
+        // Reset Trimmer State
+        isClippingEnabled = false;
+        updateClipToggleUI();
+
+        // Max Resolution Badge
         const maxLabel = (data.resolutions && data.resolutions.length > 0) ? data.resolutions[0].label : 'HD';
         maxResBadge.textContent = `Max: ${maxLabel}`;
 
-        // Populate Resolutions (No resolution cap)
+        renderResolutions();
+        renderAudioOptions();
+        updateTrimmerDisplay();
+        updateDownloadSummary();
+    }
+
+    // Render Video Resolution Options
+    function renderResolutions() {
         resolutionsList.innerHTML = '';
-        if (data.resolutions && data.resolutions.length > 0) {
-            data.resolutions.forEach((res, index) => {
+        if (currentVideoData.resolutions && currentVideoData.resolutions.length > 0) {
+            currentVideoData.resolutions.forEach((res, index) => {
                 const row = document.createElement('div');
-                row.className = `option-row ${index === 0 ? 'selected' : ''}`;
+                row.className = `option-row flex items-center justify-between p-3.5 bg-zinc-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/5' : 'border-zinc-800 hover:border-zinc-700'}`;
+                row.dataset.height = res.height;
+                
+                const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
+                const dynamicSize = formatBytes(Math.round(activeDuration * res.bytes_per_sec));
+
                 row.innerHTML = `
-                    <div class="option-left">
-                        <div class="radio-indicator"></div>
+                    <div class="flex items-center gap-3">
+                        <div class="radio-circle w-4 h-4 rounded-full border-2 flex items-center justify-center ${index === 0 ? 'border-rose-500 bg-rose-500' : 'border-zinc-600'}">
+                            <span class="w-1.5 h-1.5 rounded-full bg-white ${index === 0 ? '' : 'hidden'}"></span>
+                        </div>
                         <div>
-                            <span class="res-name">${res.resolution}</span>
-                            <span class="res-tag" style="margin-left:6px;">${res.quality_tag}</span>
-                            <span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">${res.fps > 30 ? res.fps + 'fps' : ''}</span>
+                            <span class="font-bold text-sm text-white">${res.resolution}</span>
+                            <span class="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">${res.quality_tag}</span>
+                            <span class="ml-1.5 text-xs text-zinc-500">${res.fps > 30 ? res.fps + 'fps' : ''}</span>
                         </div>
                     </div>
-                    <div class="option-right">
-                        <span>${res.size_str}</span>
+                    <div class="res-size font-mono text-xs text-zinc-400">
+                        ${dynamicSize}
                     </div>
                 `;
+
                 row.addEventListener('click', () => {
-                    document.querySelectorAll('#resolutionsList .option-row').forEach(r => r.classList.remove('selected'));
-                    row.classList.add('selected');
+                    document.querySelectorAll('#resolutionsList .option-row').forEach(r => {
+                        r.classList.remove('border-rose-500', 'bg-rose-500/5');
+                        r.classList.add('border-zinc-800');
+                        r.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-zinc-600 flex items-center justify-center';
+                        r.querySelector('.radio-circle span').classList.add('hidden');
+                    });
+
+                    row.classList.remove('border-zinc-800');
+                    row.classList.add('border-rose-500', 'bg-rose-500/5');
+                    row.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-rose-500 bg-rose-500 flex items-center justify-center';
+                    row.querySelector('.radio-circle span').classList.remove('hidden');
+
                     selectedResolution = res;
                     updateDownloadSummary();
                 });
+
                 resolutionsList.appendChild(row);
             });
-            selectedResolution = data.resolutions[0];
-        } else {
-            resolutionsList.innerHTML = `<div style="font-size:0.85rem;color:var(--text-muted);padding:12px;">Standard formats available.</div>`;
-            selectedResolution = { height: 720, resolution: '720p HD' };
+            selectedResolution = currentVideoData.resolutions[0];
         }
+    }
 
-        // Populate Audio Options
+    // Render Audio Options
+    function renderAudioOptions() {
         audioList.innerHTML = '';
-        if (data.audio_options && data.audio_options.length > 0) {
-            data.audio_options.forEach((opt, index) => {
+        if (currentVideoData.audio_options && currentVideoData.audio_options.length > 0) {
+            currentVideoData.audio_options.forEach((opt, index) => {
                 const card = document.createElement('div');
-                card.className = `option-row ${index === 0 ? 'selected' : ''}`;
+                card.className = `audio-row flex items-center justify-between p-3.5 bg-zinc-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/5' : 'border-zinc-800 hover:border-zinc-700'}`;
+                
+                const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
+                const dynamicSize = formatBytes(Math.round(activeDuration * opt.bytes_per_sec));
+
                 card.innerHTML = `
-                    <div class="option-left">
-                        <div class="radio-indicator"></div>
+                    <div class="flex items-center gap-3">
+                        <div class="radio-circle w-4 h-4 rounded-full border-2 flex items-center justify-center ${index === 0 ? 'border-rose-500 bg-rose-500' : 'border-zinc-600'}">
+                            <span class="w-1.5 h-1.5 rounded-full bg-white ${index === 0 ? '' : 'hidden'}"></span>
+                        </div>
                         <div>
-                            <div class="res-name" style="font-size:0.9rem;">${opt.label}</div>
-                            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Format: .${opt.format.toUpperCase()}</div>
+                            <div class="font-bold text-xs sm:text-sm text-white">${opt.label}</div>
+                            <div class="text-[10px] text-zinc-500 mt-0.5">Format: .${opt.format.toUpperCase()}</div>
                         </div>
                     </div>
-                    <div class="option-right">
-                        <span>${opt.size_str}</span>
+                    <div class="audio-size font-mono text-xs text-zinc-400">
+                        ${dynamicSize}
                     </div>
                 `;
+
                 card.addEventListener('click', () => {
-                    document.querySelectorAll('#audioList .option-row').forEach(c => c.classList.remove('selected'));
-                    card.classList.add('selected');
+                    document.querySelectorAll('#audioList .audio-row').forEach(c => {
+                        c.classList.remove('border-rose-500', 'bg-rose-500/5');
+                        c.classList.add('border-zinc-800');
+                        c.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-zinc-600 flex items-center justify-center';
+                        c.querySelector('.radio-circle span').classList.add('hidden');
+                    });
+
+                    card.classList.remove('border-zinc-800');
+                    card.classList.add('border-rose-500', 'bg-rose-500/5');
+                    card.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-rose-500 bg-rose-500 flex items-center justify-center';
+                    card.querySelector('.radio-circle span').classList.remove('hidden');
+
                     selectedAudio = opt;
                     updateDownloadSummary();
                 });
+
                 audioList.appendChild(card);
             });
-            selectedAudio = data.audio_options[0];
+            selectedAudio = currentVideoData.audio_options[0];
         }
+    }
 
-        // Reset Trimmer values
-        startTimeInput.value = "00:00:00";
-        endTimeInput.value = formatSeconds(totalDuration);
-        clipToggle.checked = false;
-        isClippingEnabled = false;
-        trimmerPanel.classList.remove('active');
-        updateTrimmerDisplay();
-        updateDownloadSummary();
+    // Update dynamically calculated sizes on all cards based on clip or full video
+    function updateOptionSizes() {
+        if (!currentVideoData) return;
+        const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
+
+        // Update video options
+        const resRows = document.querySelectorAll('#resolutionsList .option-row');
+        currentVideoData.resolutions.forEach((res, i) => {
+            if (resRows[i]) {
+                const sizeEl = resRows[i].querySelector('.res-size');
+                if (sizeEl) {
+                    sizeEl.textContent = formatBytes(Math.round(activeDuration * res.bytes_per_sec));
+                }
+            }
+        });
+
+        // Update audio options
+        const audioRows = document.querySelectorAll('#audioList .audio-row');
+        currentVideoData.audio_options.forEach((opt, i) => {
+            if (audioRows[i]) {
+                const sizeEl = audioRows[i].querySelector('.audio-size');
+                if (sizeEl) {
+                    sizeEl.textContent = formatBytes(Math.round(activeDuration * opt.bytes_per_sec));
+                }
+            }
+        });
     }
 
     // Segmented Mode Switching
     tabVideo.addEventListener('click', () => {
         selectedMode = 'video';
-        tabVideo.classList.add('active');
-        tabAudio.classList.remove('active');
-        videoPane.classList.add('active');
-        audioPane.classList.remove('active');
+        tabVideo.className = 'tab-transition py-2.5 rounded-lg flex items-center justify-center gap-2 bg-zinc-800 text-white shadow-sm';
+        tabAudio.className = 'tab-transition py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200';
+        videoPane.classList.remove('hidden');
+        audioPane.classList.add('hidden');
         updateDownloadSummary();
     });
 
     tabAudio.addEventListener('click', () => {
         selectedMode = 'audio';
-        tabAudio.classList.add('active');
-        tabVideo.classList.remove('active');
-        audioPane.classList.add('active');
-        videoPane.classList.remove('active');
+        tabAudio.className = 'tab-transition py-2.5 rounded-lg flex items-center justify-center gap-2 bg-zinc-800 text-white shadow-sm';
+        tabVideo.className = 'tab-transition py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200';
+        audioPane.classList.remove('hidden');
+        videoPane.classList.add('hidden');
         updateDownloadSummary();
     });
 
     videoFormatSelect.addEventListener('change', updateDownloadSummary);
 
-    // Trimmer Toggle
-    trimmerToggleRow.addEventListener('click', () => {
-        clipToggle.checked = !clipToggle.checked;
-        handleClipToggle();
+    // Toggle Clipping Button (Clean, isolated click listener)
+    clipToggleBtn.addEventListener('click', () => {
+        isClippingEnabled = !isClippingEnabled;
+        updateClipToggleUI();
+        updateDownloadSummary();
+        updateOptionSizes();
     });
 
-    clipToggle.addEventListener('change', handleClipToggle);
-
-    function handleClipToggle() {
-        isClippingEnabled = clipToggle.checked;
+    function updateClipToggleUI() {
         if (isClippingEnabled) {
-            trimmerPanel.classList.add('active');
+            clipToggleBtn.classList.remove('bg-zinc-800');
+            clipToggleBtn.classList.add('bg-rose-600', 'border-rose-500');
+            clipToggleThumb.classList.remove('left-1', 'bg-zinc-400');
+            clipToggleThumb.classList.add('right-1', 'bg-white');
+            trimmerPanel.classList.remove('hidden');
         } else {
-            trimmerPanel.classList.remove('active');
+            clipToggleBtn.classList.remove('bg-rose-600', 'border-rose-500');
+            clipToggleBtn.classList.add('bg-zinc-800');
+            clipToggleThumb.classList.remove('right-1', 'bg-white');
+            clipToggleThumb.classList.add('left-1', 'bg-zinc-400');
+            trimmerPanel.classList.add('hidden');
         }
-        updateDownloadSummary();
     }
 
-    // Trimmer Stepper Controls
+    // Stepper Handlers for Start and End points
     document.querySelectorAll('.step-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const type = btn.dataset.type;
@@ -295,6 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             updateTrimmerDisplay();
             updateDownloadSummary();
+            updateOptionSizes();
         });
     });
 
@@ -307,6 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startTimeInput.value = formatSeconds(startSeconds);
         updateTrimmerDisplay();
         updateDownloadSummary();
+        updateOptionSizes();
     });
 
     endTimeInput.addEventListener('change', () => {
@@ -318,6 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
         endTimeInput.value = formatSeconds(endSeconds);
         updateTrimmerDisplay();
         updateDownloadSummary();
+        updateOptionSizes();
     });
 
     // Preset Chips
@@ -337,6 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
             endTimeInput.value = formatSeconds(endSeconds);
             updateTrimmerDisplay();
             updateDownloadSummary();
+            updateOptionSizes();
         });
     });
 
@@ -359,36 +435,40 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentVideoData) return;
 
         let summary = "";
+        const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
+
         if (selectedMode === 'video') {
-            const res = selectedResolution ? selectedResolution.resolution : 'Best Quality';
+            const res = selectedResolution ? selectedResolution.resolution : 'Best';
             const fmt = videoFormatSelect.value.toUpperCase();
-            summary = `${res} (${fmt})`;
+            const est = selectedResolution ? formatBytes(Math.round(activeDuration * selectedResolution.bytes_per_sec)) : '';
+            summary = `${res} (${fmt}) • ~${est}`;
         } else {
             const fmt = selectedAudio ? selectedAudio.format.toUpperCase() : 'MP3';
             const bit = selectedAudio ? selectedAudio.bitrate : '320k';
-            summary = `${fmt} Audio (${bit})`;
+            const est = selectedAudio ? formatBytes(Math.round(activeDuration * selectedAudio.bytes_per_sec)) : '';
+            summary = `${fmt} Audio (${bit}) • ~${est}`;
         }
 
         if (isClippingEnabled) {
-            summary += ` • Clip [${startTimeInput.value} → ${endTimeInput.value}]`;
+            summary += ` [Clip: ${startTimeInput.value} → ${endTimeInput.value}]`;
         }
 
         downloadTargetSummary.textContent = summary;
     }
 
-    // Start Download Execution
+    // Trigger Download Process
     startDownloadBtn.addEventListener('click', async () => {
         if (!currentVideoData) return;
 
         // Reset and Open Modal
         modalTitle.textContent = "Processing Download";
-        modalStage.textContent = "Connecting to YouTube stream...";
+        modalStage.textContent = "Connecting to stream server...";
         modalProgressFill.style.width = "0%";
         statPct.textContent = "0%";
         statSpeed.textContent = "--";
         statEta.textContent = "--";
-        modalReadyBox.style.display = "none";
-        modalErrorBox.style.display = "none";
+        modalReadyBox.classList.add('hidden');
+        modalErrorBox.classList.add('hidden');
 
         if (typeof progressModal.showModal === 'function') {
             progressModal.showModal();
@@ -452,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statPct.textContent = `${Math.floor(progress)}%`;
         statSpeed.textContent = task.speed || '--';
         statEta.textContent = task.eta || '--';
-        modalStage.textContent = task.stage || 'Processing stream...';
+        modalStage.textContent = task.stage || 'Processing media...';
 
         if (status === 'completed') {
             if (currentEventSource) currentEventSource.close();
@@ -465,16 +545,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showModalSuccess(task) {
         modalTitle.textContent = "Download Ready!";
-        modalStage.textContent = "Media successfully processed.";
+        modalStage.textContent = "File processed successfully.";
         readyFileName.textContent = task.filename || "media_file";
-        
+
         const fileUrl = `/api/file/${task.id}`;
         btnSaveDirect.href = fileUrl;
         btnSaveDirect.setAttribute('download', task.filename || 'download');
 
-        modalReadyBox.style.display = "block";
+        modalReadyBox.classList.remove('hidden');
 
-        // Auto trigger download to local device
+        // Automatically trigger browser download on user's device
         const a = document.createElement('a');
         a.href = fileUrl;
         a.download = task.filename || 'download';
@@ -486,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function showModalError(errMsg) {
         modalTitle.textContent = "Error Occurred";
         modalErrorMsg.textContent = errMsg;
-        modalErrorBox.style.display = "block";
+        modalErrorBox.classList.remove('hidden');
     }
 
     modalDismissBtn.addEventListener('click', () => progressModal.close());
