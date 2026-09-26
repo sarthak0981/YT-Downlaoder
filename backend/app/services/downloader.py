@@ -14,15 +14,19 @@ import yt_dlp
 
 from ..config import DOWNLOADS_DIR
 from ..utils.time_format import format_bytes, format_seconds, parse_timestamp
+from ..utils.ytdl_helper import apply_anti_bot_options
 
 logger = logging.getLogger(__name__)
 
 # In-memory dictionary for task status
 task_storage: Dict[str, Dict[str, Any]] = {}
 
+import unicodedata
+
 def sanitize_filename(name: str) -> str:
     """Removes invalid characters for file systems across Windows/Linux."""
-    clean = re.sub(r'[\'\"\\/*?:"<>|]', "", name)
+    normalized = unicodedata.normalize('NFKD', name)
+    clean = re.sub(r'[\'\"\\/*?:"<>|\uff1a\uff0f\uff3c]', "", normalized)
     clean = clean.strip()
     return clean[:100] if len(clean) > 100 else (clean or "download")
 
@@ -409,7 +413,6 @@ class DownloaderService:
         monitor_thread.start()
 
         # yt-dlp Configuration
-        node_path = get_node_path()
         ydl_opts: Dict[str, Any] = {
             'outtmpl': output_template,
             'progress_hooks': [progress_hook],
@@ -419,11 +422,9 @@ class DownloaderService:
             'noplaylist': True,
             'socket_timeout': 25,
             'concurrent_fragment_downloads': 5,
-            'remote_components': {'ejs:github'},
         }
         
-        if node_path and Path(node_path).exists():
-            ydl_opts['js_runtimes'] = {'node': {'path': str(node_path)}}
+        apply_anti_bot_options(ydl_opts)
 
         # Configure Clipping / Section Download
         if is_clipped:
@@ -470,8 +471,21 @@ class DownloaderService:
             ydl_opts['postprocessors'] = [postprocessor]
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(url, download=True)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info_dict = ydl.extract_info(url, download=True)
+            except Exception as dl_err:
+                err_str = str(dl_err)
+                if "Sign in to confirm you’re not a bot" in err_str or "confirm you're not a bot" in err_str or "bot" in err_str.lower():
+                    logger.info("Bot verification detected during download. Retrying with mobile stream client...")
+                    cls.update_task(task_id, stage="Bypassing cloud bot verification with mobile client...", progress=12.0)
+                    apply_anti_bot_options(ydl_opts, player_clients=['ios', 'android'])
+                    if download_type == "video":
+                        ydl_opts['format'] = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best" if height else "bestvideo+bestaudio/best"
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl_fb:
+                        info_dict = ydl_fb.extract_info(url, download=True)
+                else:
+                    raise dl_err
 
             cls.update_task(task_id, stage="Verifying media streams...", progress=99.0)
 

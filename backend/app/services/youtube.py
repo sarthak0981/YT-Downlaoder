@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 import yt_dlp
 from ..utils.time_format import format_seconds, format_bytes
+from ..utils.ytdl_helper import apply_anti_bot_options
 
 def clean_youtube_url(url: str) -> str:
     """Cleans up and normalizes YouTube URLs (including Shorts, youtu.be, mobile links)."""
@@ -29,20 +30,17 @@ REALISTIC_BITRATES = {
 
 class YouTubeService:
     @staticmethod
-    def get_ydl_opts(custom_opts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Base yt-dlp options configured for safe, fast metadata extraction."""
+    def get_ydl_opts(custom_opts: Optional[Dict[str, Any]] = None, player_clients: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Base yt-dlp options configured for safe, fast metadata extraction with anti-bot protection."""
         opts = {
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
             'extract_flat': False,
             'socket_timeout': 20,
-            'remote_components': {'ejs:github'},
         }
         
-        node_path = shutil.which('node') or r"C:\Program Files\nodejs\node.exe"
-        if Path(node_path).exists():
-            opts['js_runtimes'] = {'node': {'path': str(node_path)}}
+        apply_anti_bot_options(opts, player_clients=player_clients)
 
         if custom_opts:
             opts.update(custom_opts)
@@ -53,12 +51,24 @@ class YouTubeService:
         clean_url = clean_youtube_url(url)
         opts = cls.get_ydl_opts()
         
+        info = None
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(clean_url, download=False)
         except Exception as e:
             error_msg = str(e)
-            if "Private video" in error_msg:
+            # If YouTube blocks cloud/datacenter IP with bot detection, retry with strict mobile client
+            if "Sign in to confirm you’re not a bot" in error_msg or "confirm you're not a bot" in error_msg or "bot" in error_msg.lower():
+                try:
+                    fallback_opts = cls.get_ydl_opts(player_clients=['ios', 'android'])
+                    with yt_dlp.YoutubeDL(fallback_opts) as ydl_fb:
+                        info = ydl_fb.extract_info(clean_url, download=False)
+                except Exception as fb_err:
+                    raise ValueError(
+                        "YouTube bot verification triggered on cloud server. "
+                        "Add your YouTube cookies in Render Environment Variables under YOUTUBE_COOKIES."
+                    )
+            elif "Private video" in error_msg:
                 raise ValueError("This video is private and cannot be downloaded.")
             elif "Video unavailable" in error_msg:
                 raise ValueError("This video is unavailable or has been removed.")

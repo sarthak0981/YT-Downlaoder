@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any
 import yt_dlp
 
 from ..config import BASE_DIR
+from ..utils.ytdl_helper import apply_anti_bot_options
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,6 @@ class ProxyService:
         target_file = PROXIES_DIR / f"{video_id}.mp4"
         temp_target = PROXIES_DIR / f"temp_{video_id}.%(ext)s"
         
-        node_path = get_node_path()
         ydl_opts: Dict[str, Any] = {
             'outtmpl': str(temp_target),
             'format': 'bestvideo[height<=360]+bestaudio/best[height<=360]/worstvideo+worstaudio/worst',
@@ -97,10 +97,8 @@ class ProxyService:
             'noplaylist': True,
             'socket_timeout': 15,
             'concurrent_fragment_downloads': 5,
-            'remote_components': {'ejs:github'},
         }
-        if node_path and Path(node_path).exists():
-            ydl_opts['js_runtimes'] = {'node': {'path': str(node_path)}}
+        apply_anti_bot_options(ydl_opts, player_clients=['ios', 'android'])
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

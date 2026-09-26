@@ -144,10 +144,18 @@ TubeHarvest Pro can be hosted on any cloud provider that supports Docker contain
 ### 1. Render.com (Recommended Free/Cheap Option)
 1. Go to [Render Dashboard](https://dashboard.render.com).
 2. Click **New +** → **Blueprint** (or **Web Service**).
-3. Connect your GitHub repository.
+3. Connect your GitHub repository: `sarthak0981/YT-Downlaoder`.
 4. Render will automatically detect `render.yaml` and `Dockerfile`.
 5. Set the instance type to **Free** or **Starter**.
-6. Click **Deploy**. Your app is live!
+6. *(Optional but Recommended for Cloud Hosts)* **Bypass YouTube Bot Verification / Datacenter IP restrictions**:
+   - YouTube frequently challenges cloud datacenter IPs (Render, AWS) with *"Sign in to confirm you're not a bot"*.
+   - The app comes with **built-in automatic mobile client spoofing (`ios`/`android`)** that bypasses this automatically.
+   - For maximum compatibility across all videos and 4K resolutions, export cookies using the browser extension [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) from your YouTube session.
+   - In Render Dashboard under **Environment Variables**, add:
+     - **Key**: `YOUTUBE_COOKIES`
+     - **Value**: *(Paste your exported Netscape cookies text)*
+   - The app will automatically load your cookies securely without committing them to Git!
+7. Click **Deploy**. Your app is live!
 
 ### 2. Railway.app
 1. Go to [Railway](https://railway.app) and create a **New Project**.
