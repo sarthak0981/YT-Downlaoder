@@ -2,6 +2,18 @@
  * TubeHarvest Pro - Frontend Utilities
  */
 
+function formatBytes(bytes) {
+    if (!bytes || isNaN(bytes) || bytes <= 0) return "Unknown";
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let val = bytes;
+    let unitIndex = 0;
+    while (val >= 1024 && unitIndex < units.length - 1) {
+        val /= 1024;
+        unitIndex++;
+    }
+    return (unitIndex === 0 ? val : val.toFixed(1)) + ' ' + units[unitIndex];
+}
+
 function formatSeconds(seconds) {
     if (seconds === null || seconds === undefined || isNaN(seconds) || seconds < 0) {
         return "00:00";

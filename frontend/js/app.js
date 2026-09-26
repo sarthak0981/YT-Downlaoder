@@ -2,6 +2,56 @@
  * TubeHarvest Pro - Professional Frontend Controller
  */
 
+// Self-contained utility fallbacks to prevent any cached missing functions
+if (typeof formatBytes !== 'function') {
+    window.formatBytes = function(bytes) {
+        if (!bytes || isNaN(bytes) || bytes <= 0) return "0 B";
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let val = Number(bytes);
+        let unitIndex = 0;
+        while (val >= 1024 && unitIndex < units.length - 1) {
+            val /= 1024;
+            unitIndex++;
+        }
+        return (unitIndex === 0 ? val : val.toFixed(1)) + ' ' + units[unitIndex];
+    };
+}
+
+if (typeof formatSeconds !== 'function') {
+    window.formatSeconds = function(seconds) {
+        if (seconds === null || seconds === undefined || isNaN(seconds) || seconds < 0) return "00:00";
+        const totalSecs = Math.floor(seconds);
+        const hrs = Math.floor(totalSecs / 3600);
+        const mins = Math.floor((totalSecs % 3600) / 60);
+        const secs = totalSecs % 60;
+        const pad = (n) => n.toString().padStart(2, '0');
+        if (hrs > 0) return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+        return `${pad(mins)}:${pad(secs)}`;
+    };
+}
+
+if (typeof parseTimeString !== 'function') {
+    window.parseTimeString = function(timeStr) {
+        if (!timeStr) return 0;
+        const str = timeStr.toString().trim();
+        if (!isNaN(str)) return Math.max(0, parseFloat(str));
+        const parts = str.split(':');
+        try {
+            if (parts.length === 3) return Math.max(0, (parseFloat(parts[0])||0)*3600 + (parseFloat(parts[1])||0)*60 + (parseFloat(parts[2])||0));
+            if (parts.length === 2) return Math.max(0, (parseFloat(parts[0])||0)*60 + (parseFloat(parts[1])||0));
+            if (parts.length === 1) return Math.max(0, parseFloat(parts[0])||0);
+        } catch(e) { return 0; }
+        return 0;
+    };
+}
+
+if (typeof formatViews !== 'function') {
+    window.formatViews = function(views) {
+        if (!views) return "0 views";
+        return new Intl.NumberFormat().format(views) + " views";
+    };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Application State
     let currentVideoData = null;
