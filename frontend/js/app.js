@@ -117,13 +117,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const clipToggleBtn = document.getElementById('clipToggleBtn');
     const clipToggleThumb = document.getElementById('clipToggleThumb');
     const trimmerPanel = document.getElementById('trimmerPanel');
-    const timelineTrack = document.getElementById('timelineTrack');
+    const clipPreviewIframe = document.getElementById('clipPreviewIframe');
+    const previewTimestampBadge = document.getElementById('previewTimestampBadge');
+    const playClipBtn = document.getElementById('playClipBtn');
+    const playClipText = document.getElementById('playClipText');
+    const jumpStartBtn = document.getElementById('jumpStartBtn');
+    const jumpEndBtn = document.getElementById('jumpEndBtn');
+    const timelineVisualBar = document.getElementById('timelineVisualBar');
     const timelineRange = document.getElementById('timelineRange');
-    const startHandle = document.getElementById('startHandle');
-    const endHandle = document.getElementById('endHandle');
-    const startTooltip = document.getElementById('startTooltip');
-    const endTooltip = document.getElementById('endTooltip');
-    const timelineMidpoint = document.getElementById('timelineMidpoint');
+    const startRange = document.getElementById('startRange');
+    const endRange = document.getElementById('endRange');
+    const startSliderLabel = document.getElementById('startSliderLabel');
+    const endSliderLabel = document.getElementById('endSliderLabel');
     const timelineTotal = document.getElementById('timelineTotal');
     const activeSelectionMetrics = document.getElementById('activeSelectionMetrics');
     const startTimeInput = document.getElementById('startTimeInput');
@@ -266,14 +271,23 @@ document.addEventListener('DOMContentLoaded', () => {
         isClippingEnabled = false;
         updateClipToggleUI();
 
-        // Setup Timeline labels
-        timelineMidpoint.textContent = formatSeconds(totalDuration / 2);
+        // Setup Timeline labels & sliders
         timelineTotal.textContent = formatSeconds(totalDuration);
+        startRange.min = 0;
+        startRange.max = totalDuration;
+        startRange.value = 0;
+        endRange.min = 0;
+        endRange.max = totalDuration;
+        endRange.value = totalDuration;
+
+        if (clipPreviewIframe && data.id) {
+            clipPreviewIframe.src = `https://www.youtube-nocookie.com/embed/${data.id}?enablejsapi=1`;
+        }
 
         renderResolutions();
         renderAudioOptions();
         setDownloadMode('video'); // default to video explicitly
-        syncScrubberPositions();
+        syncSliderPositions();
     }
 
     // HD Thumbnail Downloader Utility
@@ -470,9 +484,12 @@ document.addEventListener('DOMContentLoaded', () => {
     clipToggleBtn.addEventListener('click', () => {
         isClippingEnabled = !isClippingEnabled;
         updateClipToggleUI();
-        syncScrubberPositions();
+        syncSliderPositions();
         updateDownloadSummary();
         updateOptionSizes();
+        if (isClippingEnabled) {
+            seekPreviewPlayer(startSeconds);
+        }
     });
 
     function updateClipToggleUI() {
@@ -488,116 +505,134 @@ document.addEventListener('DOMContentLoaded', () => {
             clipToggleThumb.classList.remove('right-1', 'bg-white');
             clipToggleThumb.classList.add('left-1', 'bg-zinc-400');
             trimmerPanel.classList.add('hidden');
+            pausePreviewPlayer();
         }
     }
 
     // ==========================================
-    // INTERACTIVE DUAL-HANDLE TIMELINE SCRUBBER
+    // REAL-TIME VIDEO PREVIEW & DUAL RANGE ENGINE
     // ==========================================
 
-    function getTrackFraction(clientX) {
-        const rect = timelineTrack.getBoundingClientRect();
-        const x = clientX - rect.left;
-        return Math.max(0, Math.min(1, x / rect.width));
+    function seekPreviewPlayer(sec) {
+        if (clipPreviewIframe && clipPreviewIframe.contentWindow) {
+            clipPreviewIframe.contentWindow.postMessage(
+                JSON.stringify({
+                    event: 'command',
+                    func: 'seekTo',
+                    args: [Math.floor(sec), true]
+                }),
+                '*'
+            );
+        }
     }
 
-    // Drag Start Handle
-    startHandle.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        isDraggingStart = true;
-        startHandle.setPointerCapture(e.pointerId);
-    });
+    let clipPlayTimer = null;
+    let isPlayingClip = false;
 
-    startHandle.addEventListener('pointermove', (e) => {
-        if (!isDraggingStart || totalDuration <= 0) return;
-        const frac = getTrackFraction(e.clientX);
-        const newSec = Math.round(frac * totalDuration);
-        startSeconds = Math.max(0, Math.min(endSeconds - 1, newSec));
-        syncScrubberPositions();
-        updateOptionSizes();
-        updateDownloadSummary();
-    });
+    function playSelectedClip() {
+        if (!currentVideoData || !clipPreviewIframe || !clipPreviewIframe.contentWindow) return;
 
-    startHandle.addEventListener('pointerup', (e) => {
-        if (isDraggingStart) {
-            isDraggingStart = false;
-            try { startHandle.releasePointerCapture(e.pointerId); } catch(err){}
+        if (isPlayingClip) {
+            pausePreviewPlayer();
+            return;
         }
-    });
 
-    startHandle.addEventListener('pointercancel', (e) => {
-        if (isDraggingStart) {
-            isDraggingStart = false;
-            try { startHandle.releasePointerCapture(e.pointerId); } catch(err){}
+        isPlayingClip = true;
+        playClipText.textContent = "Pause Clip";
+        playClipBtn.classList.remove('bg-rose-600', 'hover:bg-rose-500');
+        playClipBtn.classList.add('bg-amber-600', 'hover:bg-amber-500');
+
+        seekPreviewPlayer(startSeconds);
+        clipPreviewIframe.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+            '*'
+        );
+
+        if (clipPlayTimer) clearTimeout(clipPlayTimer);
+        const clipLength = Math.max(1, endSeconds - startSeconds);
+
+        clipPlayTimer = setTimeout(() => {
+            pausePreviewPlayer();
+            seekPreviewPlayer(startSeconds);
+        }, (clipLength + 0.3) * 1000);
+    }
+
+    function pausePreviewPlayer() {
+        isPlayingClip = false;
+        playClipText.textContent = "Play Selected Clip";
+        playClipBtn.classList.remove('bg-amber-600', 'hover:bg-amber-500');
+        playClipBtn.classList.add('bg-rose-600', 'hover:bg-rose-500');
+        if (clipPlayTimer) {
+            clearTimeout(clipPlayTimer);
+            clipPlayTimer = null;
         }
-    });
-
-    // Drag End Handle
-    endHandle.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        isDraggingEnd = true;
-        endHandle.setPointerCapture(e.pointerId);
-    });
-
-    endHandle.addEventListener('pointermove', (e) => {
-        if (!isDraggingEnd || totalDuration <= 0) return;
-        const frac = getTrackFraction(e.clientX);
-        const newSec = Math.round(frac * totalDuration);
-        endSeconds = Math.min(totalDuration, Math.max(startSeconds + 1, newSec));
-        syncScrubberPositions();
-        updateOptionSizes();
-        updateDownloadSummary();
-    });
-
-    endHandle.addEventListener('pointerup', (e) => {
-        if (isDraggingEnd) {
-            isDraggingEnd = false;
-            try { endHandle.releasePointerCapture(e.pointerId); } catch(err){}
+        if (clipPreviewIframe && clipPreviewIframe.contentWindow) {
+            clipPreviewIframe.contentWindow.postMessage(
+                JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+                '*'
+            );
         }
+    }
+
+    playClipBtn.addEventListener('click', playSelectedClip);
+
+    jumpStartBtn.addEventListener('click', () => {
+        pausePreviewPlayer();
+        seekPreviewPlayer(startSeconds);
+        previewTimestampBadge.textContent = `Frame: ${formatSeconds(startSeconds)}`;
     });
 
-    endHandle.addEventListener('pointercancel', (e) => {
-        if (isDraggingEnd) {
-            isDraggingEnd = false;
-            try { endHandle.releasePointerCapture(e.pointerId); } catch(err){}
-        }
+    jumpEndBtn.addEventListener('click', () => {
+        pausePreviewPlayer();
+        seekPreviewPlayer(endSeconds);
+        previewTimestampBadge.textContent = `Frame: ${formatSeconds(endSeconds)}`;
     });
 
-    // Clicking track jumps nearest handle
-    timelineTrack.addEventListener('click', (e) => {
-        if (e.target === startHandle || e.target === endHandle || startHandle.contains(e.target) || endHandle.contains(e.target)) return;
-        if (totalDuration <= 0) return;
-
-        const frac = getTrackFraction(e.clientX);
-        const clickSec = Math.round(frac * totalDuration);
-
-        const distStart = Math.abs(clickSec - startSeconds);
-        const distEnd = Math.abs(clickSec - endSeconds);
-
-        if (distStart < distEnd) {
-            startSeconds = Math.max(0, Math.min(endSeconds - 1, clickSec));
+    // Dual Range Slider Controls
+    startRange.addEventListener('input', () => {
+        const val = parseFloat(startRange.value);
+        if (val >= endSeconds) {
+            startSeconds = Math.max(0, endSeconds - 1);
+            startRange.value = startSeconds;
         } else {
-            endSeconds = Math.min(totalDuration, Math.max(startSeconds + 1, clickSec));
+            startSeconds = val;
         }
-
-        syncScrubberPositions();
+        syncSliderPositions();
         updateOptionSizes();
         updateDownloadSummary();
+        seekPreviewPlayer(startSeconds);
+        previewTimestampBadge.textContent = `Frame: ${formatSeconds(startSeconds)}`;
     });
 
-    function syncScrubberPositions() {
+    endRange.addEventListener('input', () => {
+        const val = parseFloat(endRange.value);
+        if (val <= startSeconds) {
+            endSeconds = Math.min(totalDuration, startSeconds + 1);
+            endRange.value = endSeconds;
+        } else {
+            endSeconds = val;
+        }
+        syncSliderPositions();
+        updateOptionSizes();
+        updateDownloadSummary();
+        seekPreviewPlayer(endSeconds);
+        previewTimestampBadge.textContent = `Frame: ${formatSeconds(endSeconds)}`;
+    });
+
+    function syncSliderPositions() {
         if (totalDuration <= 0) return;
 
         const startPct = (startSeconds / totalDuration) * 100;
         const endPct = (endSeconds / totalDuration) * 100;
 
-        startHandle.style.left = `${startPct}%`;
-        endHandle.style.left = `${endPct}%`;
         timelineRange.style.left = `${startPct}%`;
         timelineRange.style.width = `${Math.max(1, endPct - startPct)}%`;
 
-        startTooltip.textContent = formatSeconds(startSeconds);
-        endTooltip.textContent = formatSeconds(endSeconds);
+        startSliderLabel.textContent = formatSeconds(startSeconds);
+        endSliderLabel.textContent = formatSeconds(endSeconds);
+
+        startRange.value = startSeconds;
+        endRange.value = endSeconds;
 
         startTimeInput.value = formatSeconds(startSeconds);
         endTimeInput.value = formatSeconds(endSeconds);
@@ -617,14 +652,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (startSeconds >= endSeconds) {
                     startSeconds = Math.max(0, endSeconds - 1);
                 }
+                seekPreviewPlayer(startSeconds);
+                previewTimestampBadge.textContent = `Frame: ${formatSeconds(startSeconds)}`;
             } else if (type === 'end') {
                 endSeconds = Math.max(0, Math.min(totalDuration, endSeconds + delta));
                 if (endSeconds <= startSeconds) {
                     endSeconds = Math.min(totalDuration, startSeconds + 1);
                 }
+                seekPreviewPlayer(endSeconds);
+                previewTimestampBadge.textContent = `Frame: ${formatSeconds(endSeconds)}`;
             }
 
-            syncScrubberPositions();
+            syncSliderPositions();
             updateDownloadSummary();
             updateOptionSizes();
         });
@@ -636,9 +675,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (startSeconds >= endSeconds) {
             startSeconds = Math.max(0, endSeconds - 1);
         }
-        syncScrubberPositions();
+        syncSliderPositions();
         updateDownloadSummary();
         updateOptionSizes();
+        seekPreviewPlayer(startSeconds);
+        previewTimestampBadge.textContent = `Frame: ${formatSeconds(startSeconds)}`;
     });
 
     endTimeInput.addEventListener('change', () => {
@@ -647,9 +688,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (endSeconds <= startSeconds) {
             endSeconds = Math.min(totalDuration, startSeconds + 1);
         }
-        syncScrubberPositions();
+        syncSliderPositions();
         updateDownloadSummary();
         updateOptionSizes();
+        seekPreviewPlayer(endSeconds);
+        previewTimestampBadge.textContent = `Frame: ${formatSeconds(endSeconds)}`;
     });
 
     function updateDownloadSummary() {

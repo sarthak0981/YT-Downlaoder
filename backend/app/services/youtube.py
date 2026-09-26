@@ -1,6 +1,7 @@
 import re
 import shutil
 from typing import Dict, Any, List, Optional
+from pathlib import Path
 import yt_dlp
 from ..utils.time_format import format_seconds, format_bytes
 
@@ -36,9 +37,12 @@ class YouTubeService:
             'skip_download': True,
             'extract_flat': False,
             'socket_timeout': 20,
+            'remote_components': {'ejs:github'},
         }
-        if shutil.which('node'):
-            opts['js_runtimes'] = {'node': {}}
+        
+        node_path = shutil.which('node') or r"C:\Program Files\nodejs\node.exe"
+        if Path(node_path).exists():
+            opts['js_runtimes'] = {'node': {'path': str(node_path)}}
 
         if custom_opts:
             opts.update(custom_opts)
