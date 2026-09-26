@@ -2,6 +2,9 @@
 setlocal enabledelayedexpansion
 title TubeHarvest Pro Launcher
 
+:: Ensure local toolchains and uv are on PATH
+set "PATH=%LOCALAPPDATA%\bin;%USERPROFILE%\.local\bin;%ProgramFiles%\nodejs;%PATH%"
+
 echo ====================================================
 echo           TubeHarvest Pro - Local Launcher
 echo ====================================================
