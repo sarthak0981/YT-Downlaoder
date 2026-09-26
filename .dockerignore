@@ -11,3 +11,7 @@ downloads/*
 .env
 *.log
 .DS_Store
+scratch/
+scratch_dl/
+*.mp4
+test_clip_align.py
