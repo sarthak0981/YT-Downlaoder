@@ -95,14 +95,21 @@ class DownloaderService:
         
         output_template = str(DOWNLOADS_DIR / f"{task_id}_%(title).100s.%(ext)s")
 
+        # Track multi-stream DASH progress monotonically
+        # For video with separate audio: stream 1 (video) = 5% to 70%, stream 2 (audio) = 70% to 90%
+        # For audio-only: stream 1 = 5% to 85%
+        is_dash_video = (download_type == "video")
+        stream_index = 1
+
         def progress_hook(d):
+            nonlocal stream_index
             if d['status'] == 'downloading':
                 total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
                 downloaded = d.get('downloaded_bytes') or 0
                 
                 pct = 0.0
                 if total > 0:
-                    pct = round((downloaded / total) * 100, 1)
+                    pct = (downloaded / total) * 100.0
                 elif '_percent_str' in d:
                     try:
                         clean_pct = re.sub(r'[^0-9.]', '', d['_percent_str'])
@@ -110,26 +117,49 @@ class DownloaderService:
                     except ValueError:
                         pct = 50.0
 
+                pct = max(0.0, min(100.0, pct))
                 speed = d.get('speed') or 0
                 speed_str = f"{format_bytes(int(speed))}/s" if speed else d.get('_speed_str', '--/s')
                 eta_str = d.get('_eta_str') or (f"{d.get('eta')}s" if d.get('eta') else '--')
 
-                display_pct = min(94.0, max(5.0, pct))
+                if is_dash_video:
+                    if stream_index == 1:
+                        # Video stream portion: 5% -> 70%
+                        overall_pct = 5.0 + (pct * 0.65)
+                        stage_label = f"Downloading video stream ({pct:.0f}%)..."
+                    else:
+                        # Audio stream portion: 70% -> 90%
+                        overall_pct = 70.0 + (pct * 0.20)
+                        stage_label = f"Downloading audio stream ({pct:.0f}%)..."
+                else:
+                    # Audio-only stream: 5% -> 85%
+                    overall_pct = 5.0 + (pct * 0.80)
+                    stage_label = f"Downloading audio stream ({pct:.0f}%)..."
+
                 cls.update_task(
                     task_id,
                     status='downloading',
-                    progress=display_pct,
+                    progress=round(overall_pct, 1),
                     speed=speed_str,
                     eta=eta_str,
-                    stage=f"Downloading stream ({display_pct:.0f}%)..."
+                    stage=stage_label
                 )
             elif d['status'] == 'finished':
-                cls.update_task(
-                    task_id,
-                    status='processing',
-                    progress=95.0,
-                    stage="Finalizing stream with FFmpeg..."
-                )
+                if is_dash_video and stream_index == 1:
+                    stream_index = 2
+                    cls.update_task(
+                        task_id,
+                        status='downloading',
+                        progress=70.0,
+                        stage="Video stream downloaded. Downloading audio stream..."
+                    )
+                else:
+                    cls.update_task(
+                        task_id,
+                        status='processing',
+                        progress=90.0,
+                        stage="Finalizing stream with FFmpeg..."
+                    )
 
         def postprocessor_hook(d):
             status = d.get('status')
@@ -137,15 +167,15 @@ class DownloaderService:
                 cls.update_task(
                     task_id,
                     status='processing',
-                    progress=97.0,
+                    progress=94.0,
                     stage="Converting & muxing audio/video with FFmpeg..."
                 )
             elif status == 'finished':
                 cls.update_task(
                     task_id,
                     status='processing',
-                    progress=99.0,
-                    stage="Packaging output file..."
+                    progress=98.0,
+                    stage="Packaging output media file..."
                 )
 
         ydl_opts: Dict[str, Any] = {
@@ -168,7 +198,6 @@ class DownloaderService:
             s_time = start_time if start_time is not None else 0.0
             e_time = end_time if end_time is not None else "inf"
             ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [(s_time, e_time)])
-            # Stream-copy fast mode without forced slow CPU re-encoding
             ydl_opts['force_keyframes_at_cuts'] = False
 
         target_ext = "mp4"

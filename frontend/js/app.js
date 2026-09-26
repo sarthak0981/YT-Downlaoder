@@ -1,7 +1,7 @@
 /**
  * TubeHarvest Pro - Professional Frontend Controller
- * Complete overhaul with interactive dual-handle scrubber, real-time preview,
- * resilient polling fallback, and utilities.
+ * Single-Task Polling Engine, Bulletproof Fixed Modal,
+ * Interactive Dual-Handle Scrubber, and Utilities.
  */
 
 // Self-contained utility fallbacks
@@ -64,7 +64,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let startSeconds = 0;
     let endSeconds = 0;
     let totalDuration = 0;
-    let currentEventSource = null;
+
+    // Strict Single-Task State
+    let currentActiveTaskId = null;
+    let currentPollTimer = null;
+    let downloadTriggered = false;
     let isDraggingStart = false;
     let isDraggingEnd = false;
 
@@ -129,8 +133,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Summary & Download
     const downloadTargetSummary = document.getElementById('downloadTargetSummary');
     const startDownloadBtn = document.getElementById('startDownloadBtn');
+    const btnDownloadIcon = document.getElementById('btnDownloadIcon');
+    const btnDownloadText = document.getElementById('btnDownloadText');
 
-    // Modal Elements
+    // Modal Elements (Fixed Overlay)
     const progressModal = document.getElementById('progressModal');
     const modalTitle = document.getElementById('modalTitle');
     const modalStage = document.getElementById('modalStage');
@@ -575,7 +581,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const frac = getTrackFraction(e.clientX);
         const clickSec = Math.round(frac * totalDuration);
 
-        // Calculate distance to start and end handles
+        // Distance to start and end
         const distStart = Math.abs(clickSec - startSeconds);
         const distEnd = Math.abs(clickSec - endSeconds);
 
@@ -708,14 +714,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // DOWNLOAD ENGINE & RESILIENT POLLING FALLBACK
+    // BULLETPROOF SINGLE-TASK DOWNLOAD CONTROLLER
     // ==========================================
 
-    startDownloadBtn.addEventListener('click', async () => {
-        if (!currentVideoData) return;
+    function resetDownloadButton() {
+        startDownloadBtn.disabled = false;
+        btnDownloadText.textContent = "Download to Computer";
+    }
 
-        // Reset and Open Modal
-        modalTitle.textContent = "Processing Download";
+    function openProgressModal() {
+        modalTitle.textContent = "Downloading Media";
         modalStage.textContent = "Connecting to stream server...";
         modalProgressFill.style.width = "0%";
         statPct.textContent = "0%";
@@ -723,12 +731,33 @@ document.addEventListener('DOMContentLoaded', () => {
         statEta.textContent = "--";
         modalReadyBox.classList.add('hidden');
         modalErrorBox.classList.add('hidden');
+        progressModal.classList.remove('hidden');
+    }
 
-        if (typeof progressModal.showModal === 'function') {
-            progressModal.showModal();
-        } else {
-            progressModal.setAttribute('open', '');
+    function closeProgressModal() {
+        progressModal.classList.add('hidden');
+        if (currentPollTimer) {
+            clearInterval(currentPollTimer);
+            currentPollTimer = null;
         }
+        currentActiveTaskId = null;
+        resetDownloadButton();
+    }
+
+    startDownloadBtn.addEventListener('click', async () => {
+        if (!currentVideoData) return;
+
+        // Prevent double triggers
+        if (currentPollTimer) {
+            clearInterval(currentPollTimer);
+            currentPollTimer = null;
+        }
+
+        startDownloadBtn.disabled = true;
+        btnDownloadText.textContent = "Initiating...";
+        downloadTriggered = false;
+
+        openProgressModal();
 
         const payload = {
             url: currentVideoData.url,
@@ -753,25 +782,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(data.detail || 'Download request failed.');
             }
 
-            listenToProgress(data.task_id);
+            currentActiveTaskId = data.task_id;
+            startSingleTaskPolling(currentActiveTaskId);
         } catch (err) {
+            resetDownloadButton();
             showModalError(err.message);
         }
     });
 
-    function listenToProgress(taskId) {
-        if (currentEventSource) {
-            currentEventSource.close();
-            currentEventSource = null;
+    function startSingleTaskPolling(taskId) {
+        if (currentPollTimer) {
+            clearInterval(currentPollTimer);
+            currentPollTimer = null;
         }
 
-        let isCompletedOrFailed = false;
-
-        // Active Heartbeat Polling Fallback (Runs alongside SSE every 500ms)
-        // Guaranteed to catch completion even if SSE drops, closes, or hangs!
-        const pollInterval = setInterval(async () => {
-            if (isCompletedOrFailed) {
-                clearInterval(pollInterval);
+        currentPollTimer = setInterval(async () => {
+            // Guard: only poll if this is still the active task
+            if (!currentActiveTaskId || currentActiveTaskId !== taskId) {
+                clearInterval(currentPollTimer);
+                currentPollTimer = null;
                 return;
             }
 
@@ -780,63 +809,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok) return;
                 const task = await res.json();
                 
-                if (task.status === 'completed') {
-                    isCompletedOrFailed = true;
-                    clearInterval(pollInterval);
-                    if (currentEventSource) {
-                        currentEventSource.close();
-                        currentEventSource = null;
-                    }
-                    handleProgressUpdate(task);
-                } else if (task.status === 'failed') {
-                    isCompletedOrFailed = true;
-                    clearInterval(pollInterval);
-                    if (currentEventSource) {
-                        currentEventSource.close();
-                        currentEventSource = null;
-                    }
-                    handleProgressUpdate(task);
-                } else {
-                    handleProgressUpdate(task);
-                }
+                // Guard: discard responses from any old task
+                if (task.id !== currentActiveTaskId) return;
+
+                handleProgressUpdate(task);
             } catch (e) {
                 // Ignore transient network errors
             }
-        }, 500);
-
-        try {
-            currentEventSource = new EventSource(`/api/progress/${taskId}`);
-
-            currentEventSource.addEventListener('progress', (e) => {
-                if (isCompletedOrFailed) return;
-                try {
-                    const task = JSON.parse(e.data);
-                    if (task.status === 'completed' || task.status === 'failed') {
-                        isCompletedOrFailed = true;
-                        clearInterval(pollInterval);
-                        if (currentEventSource) {
-                            currentEventSource.close();
-                            currentEventSource = null;
-                        }
-                    }
-                    handleProgressUpdate(task);
-                } catch(err) {}
-            });
-
-            currentEventSource.addEventListener('error', () => {
-                // Do NOT abort! Polling fallback will continue to monitor the task!
-                if (currentEventSource) {
-                    currentEventSource.close();
-                    currentEventSource = null;
-                }
-            });
-        } catch(e) {
-            // Polling will handle it
-        }
+        }, 400);
     }
 
     function handleProgressUpdate(task) {
-        if (!task) return;
+        if (!task || task.id !== currentActiveTaskId) return;
 
         const status = task.status;
         const progress = Math.min(100, Math.max(0, task.progress || 0));
@@ -848,13 +832,26 @@ document.addEventListener('DOMContentLoaded', () => {
         modalStage.textContent = task.stage || 'Processing media...';
 
         if (status === 'completed') {
+            if (currentPollTimer) {
+                clearInterval(currentPollTimer);
+                currentPollTimer = null;
+            }
+            resetDownloadButton();
             showModalSuccess(task);
         } else if (status === 'failed') {
+            if (currentPollTimer) {
+                clearInterval(currentPollTimer);
+                currentPollTimer = null;
+            }
+            resetDownloadButton();
             showModalError(task.error || 'Processing failed.');
         }
     }
 
     function showModalSuccess(task) {
+        if (downloadTriggered) return;
+        downloadTriggered = true;
+
         modalTitle.textContent = "Download Ready!";
         modalStage.textContent = "Media converted and ready for your device.";
         readyFileName.textContent = task.filename || "media_file";
@@ -867,7 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         modalReadyBox.classList.remove('hidden');
 
-        // Automatically trigger browser download on user's device
+        // Automatically trigger browser download on user's device ONCE
         const a = document.createElement('a');
         a.href = fileUrl;
         a.download = task.filename || 'download';
@@ -875,7 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
         a.click();
         document.body.removeChild(a);
 
-        // Save to Local History
+        // Save to Local History ONCE
         addToHistory({
             id: task.id,
             filename: task.filename,
@@ -891,9 +888,9 @@ document.addEventListener('DOMContentLoaded', () => {
         modalErrorBox.classList.remove('hidden');
     }
 
-    modalDismissBtn.addEventListener('click', () => progressModal.close());
-    closeModalCross.addEventListener('click', () => progressModal.close());
-    modalRetryBtn.addEventListener('click', () => progressModal.close());
+    modalDismissBtn.addEventListener('click', closeProgressModal);
+    closeModalCross.addEventListener('click', closeProgressModal);
+    modalRetryBtn.addEventListener('click', closeProgressModal);
 
     // ==========================================
     // DOWNLOADS HISTORY MANAGER (LOCALSTORAGE)
@@ -958,14 +955,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     historyBtn.addEventListener('click', () => {
         renderHistoryModal();
-        if (typeof historyModal.showModal === 'function') {
-            historyModal.showModal();
-        } else {
-            historyModal.setAttribute('open', '');
-        }
+        historyModal.classList.remove('hidden');
     });
 
-    closeHistoryBtn.addEventListener('click', () => historyModal.close());
+    closeHistoryBtn.addEventListener('click', () => historyModal.classList.add('hidden'));
     clearHistoryBtn.addEventListener('click', () => {
         saveHistory([]);
         renderHistoryModal();
