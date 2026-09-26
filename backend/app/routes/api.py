@@ -12,6 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from ..services.youtube import YouTubeService
 from ..services.downloader import DownloaderService
+from ..services.proxy import ProxyService
 from ..utils.time_format import parse_timestamp
 
 router = APIRouter(prefix="/api")
@@ -34,17 +35,36 @@ def health_check():
     return {"status": "ok", "service": "yt-downloader-pro"}
 
 @router.post("/info")
-def get_video_info(req: InfoRequest):
+async def get_video_info(req: InfoRequest, background_tasks: BackgroundTasks):
     if not req.url or not req.url.strip():
         raise HTTPException(status_code=400, detail="YouTube URL is required.")
         
     try:
         info = YouTubeService.get_video_info(req.url.strip())
+        video_id = info.get('id')
+        clean_url = info.get('url') or req.url.strip()
+        
+        # When a new video is fetched, delete previously cached proxies and trigger proxy generation
+        if video_id:
+            ProxyService.cleanup_old_proxies(current_video_id=video_id)
+            background_tasks.add_task(ProxyService.create_proxy_background, video_id, clean_url)
+            
         return info
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+
+@router.get("/proxy/status/{video_id}")
+def check_proxy_status(video_id: str):
+    return ProxyService.get_proxy_status(video_id)
+
+@router.get("/proxy/video/{video_id}")
+def stream_proxy_video(video_id: str):
+    file_path = ProxyService.get_proxy_file(video_id)
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Preview proxy video is not yet ready.")
+    return FileResponse(file_path, media_type="video/mp4")
 
 @router.get("/thumbnail")
 async def download_thumbnail(url: str, title: Optional[str] = None):

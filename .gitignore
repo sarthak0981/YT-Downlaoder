@@ -26,3 +26,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Scratch & test scripts
+scratch/
+scratch_dl/
+*.mp4
+test_clip_align.py
+downloads/proxies/

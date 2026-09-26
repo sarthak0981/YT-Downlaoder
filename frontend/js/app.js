@@ -1,10 +1,11 @@
 /**
  * TubeHarvest Pro - Minimalist Futuristic Frontend Controller
- * - Unambiguous Mode Switching
- * - Guaranteed Audio & Video Extraction
+ * - Unambiguous Mode Switching (Video vs Audio Only)
+ * - Single Unified Dual-Handle Timeline Scrubber (Start, End, Range Window)
+ * - Zero-Lag Local Proxy Real-Time Video Preview Player
  * - Full-Res HD Thumbnail Downloader Utility
- * - Interactive Dual-Handle Scrubber
- * - Bulletproof Single-Task Polling
+ * - Guaranteed Audio & Video Extraction with Zero Startup Delay
+ * - Single-Task Progress Polling Engine
  */
 
 // Self-contained utility fallbacks
@@ -68,12 +69,24 @@ document.addEventListener('DOMContentLoaded', () => {
     let endSeconds = 0;
     let totalDuration = 0;
 
+    // Local 60fps Proxy State
+    let proxyReady = false;
+    let proxyPollTimer = null;
+
     // Single-Task Engine
     let currentActiveTaskId = null;
     let currentPollTimer = null;
     let downloadTriggered = false;
-    let isDraggingStart = false;
-    let isDraggingEnd = false;
+
+    // Unified Slider Drag State
+    let activeDragType = null; // 'start' | 'end' | 'range'
+    let dragStartX = 0;
+    let dragInitialStartSec = 0;
+    let dragInitialEndSec = 0;
+
+    // Clip Playback State
+    let isPlayingClip = false;
+    let clipPlayTimer = null;
 
     // DOM Elements - Input Form
     const urlForm = document.getElementById('urlForm');
@@ -117,20 +130,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const clipToggleBtn = document.getElementById('clipToggleBtn');
     const clipToggleThumb = document.getElementById('clipToggleThumb');
     const trimmerPanel = document.getElementById('trimmerPanel');
+    const nativePreviewPlayer = document.getElementById('nativePreviewPlayer');
     const clipPreviewIframe = document.getElementById('clipPreviewIframe');
+    const proxyStatusBadge = document.getElementById('proxyStatusBadge');
+    const proxyStatusDot = document.getElementById('proxyStatusDot');
+    const proxyStatusText = document.getElementById('proxyStatusText');
     const previewTimestampBadge = document.getElementById('previewTimestampBadge');
+
     const playClipBtn = document.getElementById('playClipBtn');
     const playClipText = document.getElementById('playClipText');
     const jumpStartBtn = document.getElementById('jumpStartBtn');
     const jumpEndBtn = document.getElementById('jumpEndBtn');
-    const timelineVisualBar = document.getElementById('timelineVisualBar');
-    const timelineRange = document.getElementById('timelineRange');
-    const startRange = document.getElementById('startRange');
-    const endRange = document.getElementById('endRange');
-    const startSliderLabel = document.getElementById('startSliderLabel');
-    const endSliderLabel = document.getElementById('endSliderLabel');
-    const timelineTotal = document.getElementById('timelineTotal');
     const activeSelectionMetrics = document.getElementById('activeSelectionMetrics');
+    const clipDurationPill = document.getElementById('clipDurationPill');
+
+    // Single Unified Slider Elements
+    const unifiedSliderContainer = document.getElementById('unifiedSliderContainer');
+    const unifiedTrack = document.getElementById('unifiedTrack');
+    const unifiedRangeFill = document.getElementById('unifiedRangeFill');
+    const unifiedHandleStart = document.getElementById('unifiedHandleStart');
+    const unifiedTooltipStart = document.getElementById('unifiedTooltipStart');
+    const unifiedHandleEnd = document.getElementById('unifiedHandleEnd');
+    const unifiedTooltipEnd = document.getElementById('unifiedTooltipEnd');
+    const timelineTotal = document.getElementById('timelineTotal');
     const startTimeInput = document.getElementById('startTimeInput');
     const endTimeInput = document.getElementById('endTimeInput');
 
@@ -229,6 +251,13 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchBtnText.classList.add('hidden');
         fetchSpinner.classList.remove('hidden');
 
+        // Stop any previous proxy polling & clip playback
+        if (proxyPollTimer) {
+            clearInterval(proxyPollTimer);
+            proxyPollTimer = null;
+        }
+        pausePreviewPlayer();
+
         try {
             const res = await fetch('/api/info', {
                 method: 'POST',
@@ -243,6 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             currentVideoData = data;
             populateUI(data);
+            initProxyWatcher(data.id);
             detailsCard.classList.remove('hidden');
             detailsCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         } catch (err) {
@@ -271,26 +301,379 @@ document.addEventListener('DOMContentLoaded', () => {
         isClippingEnabled = false;
         updateClipToggleUI();
 
-        // Setup Timeline labels & sliders
+        // Setup Timeline labels
         timelineTotal.textContent = formatSeconds(totalDuration);
-        startRange.min = 0;
-        startRange.max = totalDuration;
-        startRange.value = 0;
-        endRange.min = 0;
-        endRange.max = totalDuration;
-        endRange.value = totalDuration;
-
-        if (clipPreviewIframe && data.id) {
-            clipPreviewIframe.src = `https://www.youtube-nocookie.com/embed/${data.id}?enablejsapi=1`;
-        }
 
         renderResolutions();
         renderAudioOptions();
-        setDownloadMode('video'); // default to video explicitly
-        syncSliderPositions();
+        setDownloadMode('video');
+        syncUnifiedSlider();
     }
 
-    // HD Thumbnail Downloader Utility
+    // ==========================================
+    // ZERO-LAG LOCAL PROXY WATCHER & PLAYER
+    // ==========================================
+
+    function initProxyWatcher(videoId) {
+        if (proxyPollTimer) {
+            clearInterval(proxyPollTimer);
+            proxyPollTimer = null;
+        }
+        proxyReady = false;
+
+        // Reset player UI
+        if (nativePreviewPlayer) {
+            nativePreviewPlayer.classList.add('hidden');
+            nativePreviewPlayer.pause();
+            nativePreviewPlayer.removeAttribute('src');
+            nativePreviewPlayer.load();
+        }
+
+        if (clipPreviewIframe) {
+            clipPreviewIframe.classList.remove('hidden');
+            clipPreviewIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1`;
+        }
+
+        if (proxyStatusBadge) {
+            proxyStatusBadge.classList.remove('hidden');
+            proxyStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse';
+            proxyStatusText.textContent = 'Generating 60fps local proxy...';
+        }
+
+        const pollStatus = async () => {
+            if (!currentVideoData || currentVideoData.id !== videoId) {
+                clearInterval(proxyPollTimer);
+                proxyPollTimer = null;
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/proxy/status/${videoId}`);
+                if (!res.ok) return;
+                const statusData = await res.json();
+
+                if (statusData.ready) {
+                    proxyReady = true;
+                    clearInterval(proxyPollTimer);
+                    proxyPollTimer = null;
+
+                    // Switch to instant local video player
+                    if (nativePreviewPlayer) {
+                        nativePreviewPlayer.src = `/api/proxy/video/${videoId}`;
+                        nativePreviewPlayer.preload = 'auto';
+                        nativePreviewPlayer.classList.remove('hidden');
+                        nativePreviewPlayer.currentTime = startSeconds;
+                    }
+                    if (clipPreviewIframe) {
+                        clipPreviewIframe.classList.add('hidden');
+                        clipPreviewIframe.src = '';
+                    }
+
+                    if (proxyStatusBadge) {
+                        proxyStatusDot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-400';
+                        proxyStatusText.textContent = 'Zero-Lag 60fps Scrubbing Active';
+                    }
+                }
+            } catch (e) {
+                // Ignore transient errors
+            }
+        };
+
+        // First immediate check, then poll every 750ms
+        pollStatus();
+        proxyPollTimer = setInterval(pollStatus, 750);
+    }
+
+    function seekPreviewPlayer(sec) {
+        sec = Math.max(0, Math.min(totalDuration, sec));
+        previewTimestampBadge.textContent = `Frame: ${formatSeconds(sec)}`;
+
+        if (proxyReady && nativePreviewPlayer && !isNaN(nativePreviewPlayer.duration)) {
+            nativePreviewPlayer.currentTime = sec;
+        } else if (clipPreviewIframe && clipPreviewIframe.contentWindow) {
+            clipPreviewIframe.contentWindow.postMessage(
+                JSON.stringify({
+                    event: 'command',
+                    func: 'seekTo',
+                    args: [Math.floor(sec), true]
+                }),
+                '*'
+            );
+        }
+    }
+
+    function playSelectedClip() {
+        if (!currentVideoData) return;
+
+        if (isPlayingClip) {
+            pausePreviewPlayer();
+            return;
+        }
+
+        isPlayingClip = true;
+        playClipText.textContent = "Pause Clip";
+        playClipBtn.classList.remove('bg-rose-600', 'hover:bg-rose-500');
+        playClipBtn.classList.add('bg-amber-600', 'hover:bg-amber-500');
+
+        if (proxyReady && nativePreviewPlayer) {
+            nativePreviewPlayer.currentTime = startSeconds;
+            nativePreviewPlayer.play().catch(() => {});
+
+            const onTimeUpdate = () => {
+                if (!isPlayingClip) {
+                    nativePreviewPlayer.removeEventListener('timeupdate', onTimeUpdate);
+                    return;
+                }
+                previewTimestampBadge.textContent = `Frame: ${formatSeconds(nativePreviewPlayer.currentTime)}`;
+                if (nativePreviewPlayer.currentTime >= endSeconds) {
+                    nativePreviewPlayer.pause();
+                    nativePreviewPlayer.currentTime = startSeconds;
+                    pausePreviewPlayer();
+                    nativePreviewPlayer.removeEventListener('timeupdate', onTimeUpdate);
+                }
+            };
+            nativePreviewPlayer.addEventListener('timeupdate', onTimeUpdate);
+        } else if (clipPreviewIframe && clipPreviewIframe.contentWindow) {
+            seekPreviewPlayer(startSeconds);
+            clipPreviewIframe.contentWindow.postMessage(
+                JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+                '*'
+            );
+
+            if (clipPlayTimer) clearTimeout(clipPlayTimer);
+            const clipLength = Math.max(1, endSeconds - startSeconds);
+            clipPlayTimer = setTimeout(() => {
+                pausePreviewPlayer();
+                seekPreviewPlayer(startSeconds);
+            }, (clipLength + 0.3) * 1000);
+        }
+    }
+
+    function pausePreviewPlayer() {
+        isPlayingClip = false;
+        playClipText.textContent = "Play Selected Clip";
+        playClipBtn.classList.remove('bg-amber-600', 'hover:bg-amber-500');
+        playClipBtn.classList.add('bg-rose-600', 'hover:bg-rose-500');
+
+        if (clipPlayTimer) {
+            clearTimeout(clipPlayTimer);
+            clipPlayTimer = null;
+        }
+
+        if (proxyReady && nativePreviewPlayer) {
+            nativePreviewPlayer.pause();
+        } else if (clipPreviewIframe && clipPreviewIframe.contentWindow) {
+            clipPreviewIframe.contentWindow.postMessage(
+                JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+                '*'
+            );
+        }
+    }
+
+    playClipBtn.addEventListener('click', playSelectedClip);
+
+    jumpStartBtn.addEventListener('click', () => {
+        pausePreviewPlayer();
+        seekPreviewPlayer(startSeconds);
+    });
+
+    jumpEndBtn.addEventListener('click', () => {
+        pausePreviewPlayer();
+        seekPreviewPlayer(endSeconds);
+    });
+
+    // ==========================================
+    // SINGLE UNIFIED DUAL-HANDLE TIMELINE SLIDER
+    // ==========================================
+
+    function syncUnifiedSlider() {
+        if (totalDuration <= 0) return;
+
+        const startPct = Math.max(0, Math.min(100, (startSeconds / totalDuration) * 100));
+        const endPct = Math.max(0, Math.min(100, (endSeconds / totalDuration) * 100));
+
+        unifiedHandleStart.style.left = `${startPct}%`;
+        unifiedHandleEnd.style.left = `${endPct}%`;
+
+        unifiedRangeFill.style.left = `${startPct}%`;
+        unifiedRangeFill.style.width = `${Math.max(0, endPct - startPct)}%`;
+
+        unifiedTooltipStart.textContent = formatSeconds(startSeconds);
+        unifiedTooltipEnd.textContent = formatSeconds(endSeconds);
+
+        startTimeInput.value = formatSeconds(startSeconds);
+        endTimeInput.value = formatSeconds(endSeconds);
+
+        const clipSecs = Math.max(0.5, endSeconds - startSeconds);
+        const durationText = `${formatSeconds(clipSecs)} (${Math.round(clipSecs)}s)`;
+        clipDurationPill.textContent = durationText;
+        activeSelectionMetrics.textContent = `${formatSeconds(startSeconds)} ➔ ${formatSeconds(endSeconds)} (${Math.round(clipSecs)}s)`;
+    }
+
+    function getSecondsFromClientX(clientX) {
+        if (!unifiedTrack || totalDuration <= 0) return 0;
+        const rect = unifiedTrack.getBoundingClientRect();
+        const clampedX = Math.max(rect.left, Math.min(rect.right, clientX));
+        const pct = (clampedX - rect.left) / rect.width;
+        return pct * totalDuration;
+    }
+
+    // Handle Start drag
+    unifiedHandleStart.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        activeDragType = 'start';
+        dragStartX = e.clientX;
+        dragInitialStartSec = startSeconds;
+        unifiedHandleStart.setPointerCapture(e.pointerId);
+    });
+
+    // Handle End drag
+    unifiedHandleEnd.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        activeDragType = 'end';
+        dragStartX = e.clientX;
+        dragInitialEndSec = endSeconds;
+        unifiedHandleEnd.setPointerCapture(e.pointerId);
+    });
+
+    // Range window slide drag
+    unifiedRangeFill.addEventListener('pointerdown', (e) => {
+        // If clicking directly on handles, let handle listeners deal with it
+        if (e.target === unifiedHandleStart || e.target === unifiedHandleEnd || 
+            unifiedHandleStart.contains(e.target) || unifiedHandleEnd.contains(e.target)) {
+            return;
+        }
+        e.stopPropagation();
+        e.preventDefault();
+        activeDragType = 'range';
+        dragStartX = e.clientX;
+        dragInitialStartSec = startSeconds;
+        dragInitialEndSec = endSeconds;
+        unifiedRangeFill.setPointerCapture(e.pointerId);
+    });
+
+    // Track click to snap closest handle
+    unifiedSliderContainer.addEventListener('pointerdown', (e) => {
+        if (activeDragType) return;
+        // Don't interfere if clicking handles or range fill
+        if (e.target === unifiedHandleStart || e.target === unifiedHandleEnd ||
+            e.target === unifiedRangeFill || unifiedHandleStart.contains(e.target) ||
+            unifiedHandleEnd.contains(e.target)) {
+            return;
+        }
+
+        const clickedSec = getSecondsFromClientX(e.clientX);
+        const distToStart = Math.abs(clickedSec - startSeconds);
+        const distToEnd = Math.abs(clickedSec - endSeconds);
+
+        if (distToStart <= distToEnd) {
+            startSeconds = Math.max(0, Math.min(endSeconds - 0.5, clickedSec));
+            seekPreviewPlayer(startSeconds);
+        } else {
+            endSeconds = Math.max(startSeconds + 0.5, Math.min(totalDuration, clickedSec));
+            seekPreviewPlayer(endSeconds);
+        }
+
+        syncUnifiedSlider();
+        updateOptionSizes();
+        updateDownloadSummary();
+    });
+
+    // Global Pointer Move & Up
+    window.addEventListener('pointermove', (e) => {
+        if (!activeDragType || totalDuration <= 0) return;
+
+        const rect = unifiedTrack.getBoundingClientRect();
+        const deltaPx = e.clientX - dragStartX;
+        const deltaSec = (deltaPx / rect.width) * totalDuration;
+
+        if (activeDragType === 'start') {
+            const newStart = Math.max(0, Math.min(endSeconds - 0.5, dragInitialStartSec + deltaSec));
+            startSeconds = newStart;
+            seekPreviewPlayer(startSeconds);
+        } else if (activeDragType === 'end') {
+            const newEnd = Math.max(startSeconds + 0.5, Math.min(totalDuration, dragInitialEndSec + deltaSec));
+            endSeconds = newEnd;
+            seekPreviewPlayer(endSeconds);
+        } else if (activeDragType === 'range') {
+            const clipDur = dragInitialEndSec - dragInitialStartSec;
+            let newStart = dragInitialStartSec + deltaSec;
+            let newEnd = newStart + clipDur;
+
+            if (newStart < 0) {
+                newStart = 0;
+                newEnd = clipDur;
+            } else if (newEnd > totalDuration) {
+                newEnd = totalDuration;
+                newStart = Math.max(0, totalDuration - clipDur);
+            }
+
+            startSeconds = newStart;
+            endSeconds = newEnd;
+            seekPreviewPlayer(startSeconds);
+        }
+
+        syncUnifiedSlider();
+        updateOptionSizes();
+        updateDownloadSummary();
+    });
+
+    window.addEventListener('pointerup', () => {
+        if (activeDragType) {
+            activeDragType = null;
+        }
+    });
+
+    window.addEventListener('pointercancel', () => {
+        if (activeDragType) {
+            activeDragType = null;
+        }
+    });
+
+    // Steppers for Start and End points
+    document.querySelectorAll('.step-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const type = btn.dataset.type;
+            const delta = parseFloat(btn.dataset.delta) || 0;
+
+            if (type === 'start') {
+                startSeconds = Math.max(0, Math.min(endSeconds - 0.5, startSeconds + delta));
+                seekPreviewPlayer(startSeconds);
+            } else if (type === 'end') {
+                endSeconds = Math.max(startSeconds + 0.5, Math.min(totalDuration, endSeconds + delta));
+                seekPreviewPlayer(endSeconds);
+            }
+
+            syncUnifiedSlider();
+            updateDownloadSummary();
+            updateOptionSizes();
+        });
+    });
+
+    startTimeInput.addEventListener('change', () => {
+        const val = parseTimeString(startTimeInput.value);
+        startSeconds = Math.max(0, Math.min(endSeconds - 0.5, val));
+        syncUnifiedSlider();
+        updateDownloadSummary();
+        updateOptionSizes();
+        seekPreviewPlayer(startSeconds);
+    });
+
+    endTimeInput.addEventListener('change', () => {
+        const val = parseTimeString(endTimeInput.value);
+        endSeconds = Math.max(startSeconds + 0.5, Math.min(totalDuration, val));
+        syncUnifiedSlider();
+        updateDownloadSummary();
+        updateOptionSizes();
+        seekPreviewPlayer(endSeconds);
+    });
+
+    // ==========================================
+    // HD THUMBNAIL DOWNLOADER & UTILITIES
+    // ==========================================
+
     downloadThumbBtn.addEventListener('click', () => {
         if (!currentVideoData) return;
         const thumbDownloadUrl = `/api/thumbnail?url=${encodeURIComponent(currentVideoData.url)}&title=${encodeURIComponent(currentVideoData.title)}`;
@@ -302,7 +685,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.removeChild(a);
     });
 
-    // Copy Video Link utility
     copyUrlBtn.addEventListener('click', async () => {
         if (!currentVideoData) return;
         try {
@@ -315,7 +697,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // In-App Preview Player
+    // In-App Full Preview Player
     togglePreviewBtn.addEventListener('click', () => {
         if (!currentVideoData || !currentVideoData.id) return;
         playerPreviewBox.classList.remove('hidden');
@@ -484,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clipToggleBtn.addEventListener('click', () => {
         isClippingEnabled = !isClippingEnabled;
         updateClipToggleUI();
-        syncSliderPositions();
+        syncUnifiedSlider();
         updateDownloadSummary();
         updateOptionSizes();
         if (isClippingEnabled) {
@@ -508,192 +890,6 @@ document.addEventListener('DOMContentLoaded', () => {
             pausePreviewPlayer();
         }
     }
-
-    // ==========================================
-    // REAL-TIME VIDEO PREVIEW & DUAL RANGE ENGINE
-    // ==========================================
-
-    function seekPreviewPlayer(sec) {
-        if (clipPreviewIframe && clipPreviewIframe.contentWindow) {
-            clipPreviewIframe.contentWindow.postMessage(
-                JSON.stringify({
-                    event: 'command',
-                    func: 'seekTo',
-                    args: [Math.floor(sec), true]
-                }),
-                '*'
-            );
-        }
-    }
-
-    let clipPlayTimer = null;
-    let isPlayingClip = false;
-
-    function playSelectedClip() {
-        if (!currentVideoData || !clipPreviewIframe || !clipPreviewIframe.contentWindow) return;
-
-        if (isPlayingClip) {
-            pausePreviewPlayer();
-            return;
-        }
-
-        isPlayingClip = true;
-        playClipText.textContent = "Pause Clip";
-        playClipBtn.classList.remove('bg-rose-600', 'hover:bg-rose-500');
-        playClipBtn.classList.add('bg-amber-600', 'hover:bg-amber-500');
-
-        seekPreviewPlayer(startSeconds);
-        clipPreviewIframe.contentWindow.postMessage(
-            JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
-            '*'
-        );
-
-        if (clipPlayTimer) clearTimeout(clipPlayTimer);
-        const clipLength = Math.max(1, endSeconds - startSeconds);
-
-        clipPlayTimer = setTimeout(() => {
-            pausePreviewPlayer();
-            seekPreviewPlayer(startSeconds);
-        }, (clipLength + 0.3) * 1000);
-    }
-
-    function pausePreviewPlayer() {
-        isPlayingClip = false;
-        playClipText.textContent = "Play Selected Clip";
-        playClipBtn.classList.remove('bg-amber-600', 'hover:bg-amber-500');
-        playClipBtn.classList.add('bg-rose-600', 'hover:bg-rose-500');
-        if (clipPlayTimer) {
-            clearTimeout(clipPlayTimer);
-            clipPlayTimer = null;
-        }
-        if (clipPreviewIframe && clipPreviewIframe.contentWindow) {
-            clipPreviewIframe.contentWindow.postMessage(
-                JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
-                '*'
-            );
-        }
-    }
-
-    playClipBtn.addEventListener('click', playSelectedClip);
-
-    jumpStartBtn.addEventListener('click', () => {
-        pausePreviewPlayer();
-        seekPreviewPlayer(startSeconds);
-        previewTimestampBadge.textContent = `Frame: ${formatSeconds(startSeconds)}`;
-    });
-
-    jumpEndBtn.addEventListener('click', () => {
-        pausePreviewPlayer();
-        seekPreviewPlayer(endSeconds);
-        previewTimestampBadge.textContent = `Frame: ${formatSeconds(endSeconds)}`;
-    });
-
-    // Dual Range Slider Controls
-    startRange.addEventListener('input', () => {
-        const val = parseFloat(startRange.value);
-        if (val >= endSeconds) {
-            startSeconds = Math.max(0, endSeconds - 1);
-            startRange.value = startSeconds;
-        } else {
-            startSeconds = val;
-        }
-        syncSliderPositions();
-        updateOptionSizes();
-        updateDownloadSummary();
-        seekPreviewPlayer(startSeconds);
-        previewTimestampBadge.textContent = `Frame: ${formatSeconds(startSeconds)}`;
-    });
-
-    endRange.addEventListener('input', () => {
-        const val = parseFloat(endRange.value);
-        if (val <= startSeconds) {
-            endSeconds = Math.min(totalDuration, startSeconds + 1);
-            endRange.value = endSeconds;
-        } else {
-            endSeconds = val;
-        }
-        syncSliderPositions();
-        updateOptionSizes();
-        updateDownloadSummary();
-        seekPreviewPlayer(endSeconds);
-        previewTimestampBadge.textContent = `Frame: ${formatSeconds(endSeconds)}`;
-    });
-
-    function syncSliderPositions() {
-        if (totalDuration <= 0) return;
-
-        const startPct = (startSeconds / totalDuration) * 100;
-        const endPct = (endSeconds / totalDuration) * 100;
-
-        timelineRange.style.left = `${startPct}%`;
-        timelineRange.style.width = `${Math.max(1, endPct - startPct)}%`;
-
-        startSliderLabel.textContent = formatSeconds(startSeconds);
-        endSliderLabel.textContent = formatSeconds(endSeconds);
-
-        startRange.value = startSeconds;
-        endRange.value = endSeconds;
-
-        startTimeInput.value = formatSeconds(startSeconds);
-        endTimeInput.value = formatSeconds(endSeconds);
-
-        const clipSecs = Math.max(1, endSeconds - startSeconds);
-        activeSelectionMetrics.textContent = `${formatSeconds(startSeconds)} ➔ ${formatSeconds(endSeconds)} (${clipSecs}s)`;
-    }
-
-    // Steppers for Start and End points
-    document.querySelectorAll('.step-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const type = btn.dataset.type;
-            const delta = parseFloat(btn.dataset.delta) || 0;
-
-            if (type === 'start') {
-                startSeconds = Math.max(0, Math.min(totalDuration, startSeconds + delta));
-                if (startSeconds >= endSeconds) {
-                    startSeconds = Math.max(0, endSeconds - 1);
-                }
-                seekPreviewPlayer(startSeconds);
-                previewTimestampBadge.textContent = `Frame: ${formatSeconds(startSeconds)}`;
-            } else if (type === 'end') {
-                endSeconds = Math.max(0, Math.min(totalDuration, endSeconds + delta));
-                if (endSeconds <= startSeconds) {
-                    endSeconds = Math.min(totalDuration, startSeconds + 1);
-                }
-                seekPreviewPlayer(endSeconds);
-                previewTimestampBadge.textContent = `Frame: ${formatSeconds(endSeconds)}`;
-            }
-
-            syncSliderPositions();
-            updateDownloadSummary();
-            updateOptionSizes();
-        });
-    });
-
-    startTimeInput.addEventListener('change', () => {
-        const val = parseTimeString(startTimeInput.value);
-        startSeconds = Math.max(0, Math.min(totalDuration, val));
-        if (startSeconds >= endSeconds) {
-            startSeconds = Math.max(0, endSeconds - 1);
-        }
-        syncSliderPositions();
-        updateDownloadSummary();
-        updateOptionSizes();
-        seekPreviewPlayer(startSeconds);
-        previewTimestampBadge.textContent = `Frame: ${formatSeconds(startSeconds)}`;
-    });
-
-    endTimeInput.addEventListener('change', () => {
-        const val = parseTimeString(endTimeInput.value);
-        endSeconds = Math.max(0, Math.min(totalDuration, val));
-        if (endSeconds <= startSeconds) {
-            endSeconds = Math.min(totalDuration, startSeconds + 1);
-        }
-        syncSliderPositions();
-        updateDownloadSummary();
-        updateOptionSizes();
-        seekPreviewPlayer(endSeconds);
-        previewTimestampBadge.textContent = `Frame: ${formatSeconds(endSeconds)}`;
-    });
 
     function updateDownloadSummary() {
         if (!currentVideoData) return;

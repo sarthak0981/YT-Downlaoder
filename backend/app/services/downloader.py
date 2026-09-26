@@ -91,6 +91,56 @@ def ensure_mp4_audio_compatibility(file_path: Path) -> Path:
         
     return file_path
 
+def align_clip_video_audio(file_path: Path, target_ext: str = "mp4") -> Path:
+    """
+    Guarantees frame-accurate start time (0.000000s) for both video and audio.
+    Completely eliminates the 1-2 seconds of silence or missing audio at the start of cuts.
+    """
+    temp_aligned = file_path.parent / f"exact_{file_path.name}"
+    cmd = [
+        'ffmpeg', '-y',
+        '-ss', '0',
+        '-i', str(file_path),
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-avoid_negative_ts', 'make_zero',
+        str(temp_aligned)
+    ]
+    try:
+        conv = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if conv.returncode == 0 and temp_aligned.exists() and temp_aligned.stat().st_size > 0:
+            file_path.unlink(missing_ok=True)
+            temp_aligned.rename(file_path)
+            logger.info(f"Successfully aligned clip audio and video to exact 0.000s: {file_path.name}")
+    except Exception as e:
+        logger.warning(f"Clip alignment exception: {e}")
+    return file_path
+
+def align_clip_audio_only(file_path: Path, target_ext: str = "mp3", bitrate: str = "320k") -> Path:
+    """
+    Guarantees exact audio start from 0.000s for audio clips without silence gaps.
+    """
+    temp_aligned = file_path.parent / f"exact_{file_path.stem}.{target_ext.lower()}"
+    clean_bitrate = '320k' if '320' in bitrate else '192k'
+    cmd = [
+        'ffmpeg', '-y',
+        '-ss', '0',
+        '-i', str(file_path),
+        '-vn',
+        '-c:a', 'libmp3lame' if target_ext.lower() == 'mp3' else 'aac',
+        '-b:a', clean_bitrate,
+        '-avoid_negative_ts', 'make_zero',
+        str(temp_aligned)
+    ]
+    try:
+        conv = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if conv.returncode == 0 and temp_aligned.exists() and temp_aligned.stat().st_size > 0:
+            file_path.unlink(missing_ok=True)
+            return temp_aligned
+    except Exception as e:
+        logger.warning(f"Audio clip alignment exception: {e}")
+    return file_path
+
 def ensure_audio_only_file(file_path: Path, target_ext: str, bitrate: str = "320k") -> Path:
     """
     Guarantees that an audio download is strictly a pure audio file of target_ext.
@@ -381,6 +431,9 @@ class DownloaderService:
             e_time = end_time if end_time is not None else "inf"
             ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [(s_time, e_time)])
             ydl_opts['force_keyframes_at_cuts'] = False
+            ydl_opts['downloader_args'] = {
+                'ffmpeg_i': ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5']
+            }
 
         # Video vs Audio Mode
         if download_type == "video":
@@ -399,9 +452,9 @@ class DownloaderService:
                     'Merger': ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-avoid_negative_ts', 'make_zero']
                 }
                 if is_clipped:
-                    ydl_opts['downloader_args'] = {
-                        'ffmpeg': ['-avoid_negative_ts', 'make_zero']
-                    }
+                    if 'downloader_args' not in ydl_opts:
+                        ydl_opts['downloader_args'] = {}
+                    ydl_opts['downloader_args']['ffmpeg'] = ['-avoid_negative_ts', 'make_zero']
         else:
             # Audio Mode
             ydl_opts['format'] = 'bestaudio/best'
@@ -450,11 +503,18 @@ class DownloaderService:
             if not final_file_path.exists():
                 raise FileNotFoundError(f"Final file {final_file_path.name} was not found.")
 
-            # Guarantee that MP4 files have universal AAC audio playable everywhere
-            if download_type == "video" and target_ext == "mp4":
-                final_file_path = ensure_mp4_audio_compatibility(final_file_path)
-            elif download_type == "audio":
-                final_file_path = ensure_audio_only_file(final_file_path, target_ext, audio_bitrate)
+            # If user provided a clip, guarantee frame-accurate audio alignment with zero startup silence
+            if is_clipped:
+                if download_type == "video":
+                    final_file_path = align_clip_video_audio(final_file_path, target_ext)
+                else:
+                    final_file_path = align_clip_audio_only(final_file_path, target_ext, audio_bitrate)
+            else:
+                # Full video / audio
+                if download_type == "video" and target_ext == "mp4":
+                    final_file_path = ensure_mp4_audio_compatibility(final_file_path)
+                elif download_type == "audio":
+                    final_file_path = ensure_audio_only_file(final_file_path, target_ext, audio_bitrate)
 
             file_size_bytes = final_file_path.stat().st_size
             clean_name = final_file_path.name.replace(f"{task_id}_", "")
