@@ -109,6 +109,8 @@ async def stream_progress(task_id: str):
             }
 
             if status in ["completed", "failed"]:
+                # Allow SSE event to flush to the client socket
+                await asyncio.sleep(0.5)
                 break
 
             await asyncio.sleep(0.5)
@@ -134,8 +136,5 @@ def serve_downloaded_file(task_id: str):
     return FileResponse(
         path=file_path,
         filename=filename,
-        media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+        media_type="application/octet-stream"
     )

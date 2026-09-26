@@ -1,8 +1,10 @@
 /**
  * TubeHarvest Pro - Professional Frontend Controller
+ * Complete overhaul with interactive dual-handle scrubber, real-time preview,
+ * resilient polling fallback, and utilities.
  */
 
-// Self-contained utility fallbacks to prevent any cached missing functions
+// Self-contained utility fallbacks
 if (typeof formatBytes !== 'function') {
     window.formatBytes = function(bytes) {
         if (!bytes || isNaN(bytes) || bytes <= 0) return "0 B";
@@ -63,10 +65,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let endSeconds = 0;
     let totalDuration = 0;
     let currentEventSource = null;
+    let isDraggingStart = false;
+    let isDraggingEnd = false;
 
-    // DOM Elements
+    // DOM Elements - Input Form
     const urlForm = document.getElementById('urlForm');
     const videoUrlInput = document.getElementById('videoUrl');
+    const clearUrlBtn = document.getElementById('clearUrlBtn');
     const pasteBtn = document.getElementById('pasteBtn');
     const fetchBtn = document.getElementById('fetchBtn');
     const fetchBtnText = document.getElementById('fetchBtnText');
@@ -75,14 +80,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorMessage = document.getElementById('errorMessage');
     const closeError = document.getElementById('closeError');
 
+    // DOM Elements - Details & Utilities
     const detailsCard = document.getElementById('detailsCard');
     const videoThumb = document.getElementById('videoThumb');
     const videoDuration = document.getElementById('videoDuration');
+    const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+    const playerPreviewBox = document.getElementById('playerPreviewBox');
+    const previewIframe = document.getElementById('previewIframe');
+    const closePreviewBtn = document.getElementById('closePreviewBtn');
+
     const videoTitle = document.getElementById('videoTitle');
     const videoChannel = document.getElementById('videoChannel');
     const videoViews = document.getElementById('videoViews');
     const maxResBadge = document.getElementById('maxResBadge');
+    const copyUrlBtn = document.getElementById('copyUrlBtn');
+    const copyUrlText = document.getElementById('copyUrlText');
+    const openYtLink = document.getElementById('openYtLink');
+    const resetFetchBtn = document.getElementById('resetFetchBtn');
 
+    // Mode Tabs & Panes
     const tabVideo = document.getElementById('tabVideo');
     const tabAudio = document.getElementById('tabAudio');
     const videoPane = document.getElementById('videoPane');
@@ -91,16 +107,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const resolutionsList = document.getElementById('resolutionsList');
     const audioList = document.getElementById('audioList');
 
+    // Interactive Trimmer & Scrubber Elements
     const clipToggleBtn = document.getElementById('clipToggleBtn');
     const clipToggleThumb = document.getElementById('clipToggleThumb');
     const trimmerPanel = document.getElementById('trimmerPanel');
-    const timelineHighlight = document.getElementById('timelineHighlight');
+    const timelineTrack = document.getElementById('timelineTrack');
+    const timelineRange = document.getElementById('timelineRange');
+    const startHandle = document.getElementById('startHandle');
+    const endHandle = document.getElementById('endHandle');
+    const startTooltip = document.getElementById('startTooltip');
+    const endTooltip = document.getElementById('endTooltip');
+    const timelineMidpoint = document.getElementById('timelineMidpoint');
+    const timelineTotal = document.getElementById('timelineTotal');
+    const activeSelectionMetrics = document.getElementById('activeSelectionMetrics');
     const startTimeInput = document.getElementById('startTimeInput');
     const endTimeInput = document.getElementById('endTimeInput');
     const startSecLabel = document.getElementById('startSecLabel');
     const endSecLabel = document.getElementById('endSecLabel');
     const clipDurationDisplay = document.getElementById('clipDurationDisplay');
 
+    // Summary & Download
     const downloadTargetSummary = document.getElementById('downloadTargetSummary');
     const startDownloadBtn = document.getElementById('startDownloadBtn');
 
@@ -121,12 +147,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalErrorMsg = document.getElementById('modalErrorMsg');
     const modalRetryBtn = document.getElementById('modalRetryBtn');
 
+    // History Modal
+    const historyBtn = document.getElementById('historyBtn');
+    const historyBadge = document.getElementById('historyBadge');
+    const historyModal = document.getElementById('historyModal');
+    const historyList = document.getElementById('historyList');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+    const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+
+    // Initialize History Badge
+    updateHistoryBadge();
+
+    // URL Clear Button visibility
+    videoUrlInput.addEventListener('input', () => {
+        if (videoUrlInput.value.trim().length > 0) {
+            clearUrlBtn.classList.remove('hidden');
+        } else {
+            clearUrlBtn.classList.add('hidden');
+        }
+    });
+
+    clearUrlBtn.addEventListener('click', () => {
+        videoUrlInput.value = '';
+        clearUrlBtn.classList.add('hidden');
+        videoUrlInput.focus();
+    });
+
     // Clipboard Paste Helper
     pasteBtn.addEventListener('click', async () => {
         try {
             const text = await navigator.clipboard.readText();
             if (text) {
                 videoUrlInput.value = text.trim();
+                clearUrlBtn.classList.remove('hidden');
                 triggerFetch();
             }
         } catch (e) {
@@ -138,6 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.sample-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             videoUrlInput.value = btn.dataset.url;
+            clearUrlBtn.classList.remove('hidden');
             triggerFetch();
         });
     });
@@ -162,12 +216,15 @@ document.addEventListener('DOMContentLoaded', () => {
         triggerFetch();
     });
 
+    // Fetch Video Details
     async function triggerFetch() {
         const url = videoUrlInput.value.trim();
         if (!url) return;
 
         hideError();
         detailsCard.classList.add('hidden');
+        playerPreviewBox.classList.add('hidden');
+        previewIframe.src = '';
         fetchBtn.disabled = true;
         fetchBtnText.classList.add('hidden');
         fetchSpinner.classList.remove('hidden');
@@ -204,6 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
         videoChannel.textContent = data.uploader;
         videoViews.textContent = formatViews(data.view_count);
 
+        openYtLink.href = data.url;
+
         totalDuration = data.duration || 100;
         startSeconds = 0;
         endSeconds = totalDuration;
@@ -212,15 +271,57 @@ document.addEventListener('DOMContentLoaded', () => {
         isClippingEnabled = false;
         updateClipToggleUI();
 
+        // Setup Timeline labels
+        timelineMidpoint.textContent = formatSeconds(totalDuration / 2);
+        timelineTotal.textContent = formatSeconds(totalDuration);
+
         // Max Resolution Badge
         const maxLabel = (data.resolutions && data.resolutions.length > 0) ? data.resolutions[0].label : 'HD';
         maxResBadge.textContent = `Max: ${maxLabel}`;
 
         renderResolutions();
         renderAudioOptions();
-        updateTrimmerDisplay();
+        syncScrubberPositions();
         updateDownloadSummary();
     }
+
+    // Copy Video Link utility
+    copyUrlBtn.addEventListener('click', async () => {
+        if (!currentVideoData) return;
+        try {
+            await navigator.clipboard.writeText(currentVideoData.url);
+            copyUrlText.textContent = "Copied!";
+            setTimeout(() => { copyUrlText.textContent = "Copy Link"; }, 2000);
+        } catch (e) {
+            copyUrlText.textContent = "Failed";
+            setTimeout(() => { copyUrlText.textContent = "Copy Link"; }, 2000);
+        }
+    });
+
+    // Reset Fetch
+    resetFetchBtn.addEventListener('click', () => {
+        detailsCard.classList.add('hidden');
+        playerPreviewBox.classList.add('hidden');
+        previewIframe.src = '';
+        currentVideoData = null;
+        videoUrlInput.value = '';
+        clearUrlBtn.classList.add('hidden');
+        videoUrlInput.focus();
+    });
+
+    // In-App Preview Player
+    togglePreviewBtn.addEventListener('click', () => {
+        if (!currentVideoData || !currentVideoData.id) return;
+        playerPreviewBox.classList.remove('hidden');
+        const start = Math.floor(startSeconds);
+        previewIframe.src = `https://www.youtube-nocookie.com/embed/${currentVideoData.id}?autoplay=1&start=${start}`;
+        playerPreviewBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    closePreviewBtn.addEventListener('click', () => {
+        playerPreviewBox.classList.add('hidden');
+        previewIframe.src = '';
+    });
 
     // Render Video Resolution Options
     function renderResolutions() {
@@ -228,7 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentVideoData.resolutions && currentVideoData.resolutions.length > 0) {
             currentVideoData.resolutions.forEach((res, index) => {
                 const row = document.createElement('div');
-                row.className = `option-row flex items-center justify-between p-3.5 bg-zinc-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/5' : 'border-zinc-800 hover:border-zinc-700'}`;
+                row.className = `option-row flex items-center justify-between p-3.5 bg-dark-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/10 shadow-sm' : 'border-white/[0.08] hover:border-zinc-700'}`;
                 row.dataset.height = res.height;
                 
                 const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
@@ -240,26 +341,28 @@ document.addEventListener('DOMContentLoaded', () => {
                             <span class="w-1.5 h-1.5 rounded-full bg-white ${index === 0 ? '' : 'hidden'}"></span>
                         </div>
                         <div>
-                            <span class="font-bold text-sm text-white">${res.resolution}</span>
-                            <span class="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">${res.quality_tag}</span>
-                            <span class="ml-1.5 text-xs text-zinc-500">${res.fps > 30 ? res.fps + 'fps' : ''}</span>
+                            <div class="font-bold text-sm text-white flex items-center gap-1.5">
+                                <span>${res.resolution}</span>
+                                <span class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-dark-800 text-rose-400 border border-rose-500/20">${res.quality_tag}</span>
+                            </div>
+                            <div class="text-[11px] text-zinc-500 mt-0.5">${res.fps > 30 ? res.fps + ' fps • ' : ''}Enhanced Stream</div>
                         </div>
                     </div>
-                    <div class="res-size font-mono text-xs text-zinc-400">
+                    <div class="res-size font-mono text-xs font-semibold text-zinc-300">
                         ${dynamicSize}
                     </div>
                 `;
 
                 row.addEventListener('click', () => {
                     document.querySelectorAll('#resolutionsList .option-row').forEach(r => {
-                        r.classList.remove('border-rose-500', 'bg-rose-500/5');
-                        r.classList.add('border-zinc-800');
+                        r.classList.remove('border-rose-500', 'bg-rose-500/10', 'shadow-sm');
+                        r.classList.add('border-white/[0.08]');
                         r.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-zinc-600 flex items-center justify-center';
                         r.querySelector('.radio-circle span').classList.add('hidden');
                     });
 
-                    row.classList.remove('border-zinc-800');
-                    row.classList.add('border-rose-500', 'bg-rose-500/5');
+                    row.classList.remove('border-white/[0.08]');
+                    row.classList.add('border-rose-500', 'bg-rose-500/10', 'shadow-sm');
                     row.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-rose-500 bg-rose-500 flex items-center justify-center';
                     row.querySelector('.radio-circle span').classList.remove('hidden');
 
@@ -279,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentVideoData.audio_options && currentVideoData.audio_options.length > 0) {
             currentVideoData.audio_options.forEach((opt, index) => {
                 const card = document.createElement('div');
-                card.className = `audio-row flex items-center justify-between p-3.5 bg-zinc-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/5' : 'border-zinc-800 hover:border-zinc-700'}`;
+                card.className = `audio-row flex items-center justify-between p-3.5 bg-dark-950 border rounded-xl cursor-pointer transition-all ${index === 0 ? 'border-rose-500 bg-rose-500/10 shadow-sm' : 'border-white/[0.08] hover:border-zinc-700'}`;
                 
                 const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
                 const dynamicSize = formatBytes(Math.round(activeDuration * opt.bytes_per_sec));
@@ -291,24 +394,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                         <div>
                             <div class="font-bold text-xs sm:text-sm text-white">${opt.label}</div>
-                            <div class="text-[10px] text-zinc-500 mt-0.5">Format: .${opt.format.toUpperCase()}</div>
+                            <div class="text-[10px] text-zinc-500 mt-0.5 font-mono">Format: .${opt.format.toUpperCase()} (${opt.bitrate})</div>
                         </div>
                     </div>
-                    <div class="audio-size font-mono text-xs text-zinc-400">
+                    <div class="audio-size font-mono text-xs font-semibold text-zinc-300">
                         ${dynamicSize}
                     </div>
                 `;
 
                 card.addEventListener('click', () => {
                     document.querySelectorAll('#audioList .audio-row').forEach(c => {
-                        c.classList.remove('border-rose-500', 'bg-rose-500/5');
-                        c.classList.add('border-zinc-800');
+                        c.classList.remove('border-rose-500', 'bg-rose-500/10', 'shadow-sm');
+                        c.classList.add('border-white/[0.08]');
                         c.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-zinc-600 flex items-center justify-center';
                         c.querySelector('.radio-circle span').classList.add('hidden');
                     });
 
-                    card.classList.remove('border-zinc-800');
-                    card.classList.add('border-rose-500', 'bg-rose-500/5');
+                    card.classList.remove('border-white/[0.08]');
+                    card.classList.add('border-rose-500', 'bg-rose-500/10', 'shadow-sm');
                     card.querySelector('.radio-circle').className = 'radio-circle w-4 h-4 rounded-full border-2 border-rose-500 bg-rose-500 flex items-center justify-center';
                     card.querySelector('.radio-circle span').classList.remove('hidden');
 
@@ -322,30 +425,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Update dynamically calculated sizes on all cards based on clip or full video
+    // Dynamic Size Updates when duration changes
     function updateOptionSizes() {
         if (!currentVideoData) return;
         const activeDuration = isClippingEnabled ? Math.max(1, endSeconds - startSeconds) : totalDuration;
 
-        // Update video options
+        // Video options
         const resRows = document.querySelectorAll('#resolutionsList .option-row');
         currentVideoData.resolutions.forEach((res, i) => {
             if (resRows[i]) {
                 const sizeEl = resRows[i].querySelector('.res-size');
-                if (sizeEl) {
-                    sizeEl.textContent = formatBytes(Math.round(activeDuration * res.bytes_per_sec));
-                }
+                if (sizeEl) sizeEl.textContent = formatBytes(Math.round(activeDuration * res.bytes_per_sec));
             }
         });
 
-        // Update audio options
+        // Audio options
         const audioRows = document.querySelectorAll('#audioList .audio-row');
         currentVideoData.audio_options.forEach((opt, i) => {
             if (audioRows[i]) {
                 const sizeEl = audioRows[i].querySelector('.audio-size');
-                if (sizeEl) {
-                    sizeEl.textContent = formatBytes(Math.round(activeDuration * opt.bytes_per_sec));
-                }
+                if (sizeEl) sizeEl.textContent = formatBytes(Math.round(activeDuration * opt.bytes_per_sec));
             }
         });
     }
@@ -353,8 +452,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Segmented Mode Switching
     tabVideo.addEventListener('click', () => {
         selectedMode = 'video';
-        tabVideo.className = 'tab-transition py-2.5 rounded-lg flex items-center justify-center gap-2 bg-zinc-800 text-white shadow-sm';
-        tabAudio.className = 'tab-transition py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200';
+        tabVideo.className = 'py-2.5 rounded-lg flex items-center justify-center gap-2 bg-dark-800 text-white shadow-md transition-all';
+        tabAudio.className = 'py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200 transition-all';
         videoPane.classList.remove('hidden');
         audioPane.classList.add('hidden');
         updateDownloadSummary();
@@ -362,8 +461,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     tabAudio.addEventListener('click', () => {
         selectedMode = 'audio';
-        tabAudio.className = 'tab-transition py-2.5 rounded-lg flex items-center justify-center gap-2 bg-zinc-800 text-white shadow-sm';
-        tabVideo.className = 'tab-transition py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200';
+        tabAudio.className = 'py-2.5 rounded-lg flex items-center justify-center gap-2 bg-dark-800 text-white shadow-md transition-all';
+        tabVideo.className = 'py-2.5 rounded-lg flex items-center justify-center gap-2 text-zinc-400 hover:text-zinc-200 transition-all';
         audioPane.classList.remove('hidden');
         videoPane.classList.add('hidden');
         updateDownloadSummary();
@@ -371,31 +470,154 @@ document.addEventListener('DOMContentLoaded', () => {
 
     videoFormatSelect.addEventListener('change', updateDownloadSummary);
 
-    // Toggle Clipping Button (Clean, isolated click listener)
+    // Toggle Clipping Button
     clipToggleBtn.addEventListener('click', () => {
         isClippingEnabled = !isClippingEnabled;
         updateClipToggleUI();
+        syncScrubberPositions();
         updateDownloadSummary();
         updateOptionSizes();
     });
 
     function updateClipToggleUI() {
         if (isClippingEnabled) {
-            clipToggleBtn.classList.remove('bg-zinc-800');
+            clipToggleBtn.classList.remove('bg-dark-800');
             clipToggleBtn.classList.add('bg-rose-600', 'border-rose-500');
             clipToggleThumb.classList.remove('left-1', 'bg-zinc-400');
             clipToggleThumb.classList.add('right-1', 'bg-white');
             trimmerPanel.classList.remove('hidden');
         } else {
             clipToggleBtn.classList.remove('bg-rose-600', 'border-rose-500');
-            clipToggleBtn.classList.add('bg-zinc-800');
+            clipToggleBtn.classList.add('bg-dark-800');
             clipToggleThumb.classList.remove('right-1', 'bg-white');
             clipToggleThumb.classList.add('left-1', 'bg-zinc-400');
             trimmerPanel.classList.add('hidden');
         }
     }
 
-    // Stepper Handlers for Start and End points
+    // ==========================================
+    // INTERACTIVE DUAL-HANDLE TIMELINE SCRUBBER
+    // ==========================================
+
+    function getTrackFraction(clientX) {
+        const rect = timelineTrack.getBoundingClientRect();
+        const x = clientX - rect.left;
+        return Math.max(0, Math.min(1, x / rect.width));
+    }
+
+    // Drag Start Handle
+    startHandle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        isDraggingStart = true;
+        startHandle.setPointerCapture(e.pointerId);
+    });
+
+    startHandle.addEventListener('pointermove', (e) => {
+        if (!isDraggingStart || totalDuration <= 0) return;
+        const frac = getTrackFraction(e.clientX);
+        const newSec = Math.round(frac * totalDuration);
+        startSeconds = Math.max(0, Math.min(endSeconds - 1, newSec));
+        syncScrubberPositions();
+        updateOptionSizes();
+        updateDownloadSummary();
+    });
+
+    startHandle.addEventListener('pointerup', (e) => {
+        if (isDraggingStart) {
+            isDraggingStart = false;
+            try { startHandle.releasePointerCapture(e.pointerId); } catch(err){}
+        }
+    });
+
+    startHandle.addEventListener('pointercancel', (e) => {
+        if (isDraggingStart) {
+            isDraggingStart = false;
+            try { startHandle.releasePointerCapture(e.pointerId); } catch(err){}
+        }
+    });
+
+    // Drag End Handle
+    endHandle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        isDraggingEnd = true;
+        endHandle.setPointerCapture(e.pointerId);
+    });
+
+    endHandle.addEventListener('pointermove', (e) => {
+        if (!isDraggingEnd || totalDuration <= 0) return;
+        const frac = getTrackFraction(e.clientX);
+        const newSec = Math.round(frac * totalDuration);
+        endSeconds = Math.min(totalDuration, Math.max(startSeconds + 1, newSec));
+        syncScrubberPositions();
+        updateOptionSizes();
+        updateDownloadSummary();
+    });
+
+    endHandle.addEventListener('pointerup', (e) => {
+        if (isDraggingEnd) {
+            isDraggingEnd = false;
+            try { endHandle.releasePointerCapture(e.pointerId); } catch(err){}
+        }
+    });
+
+    endHandle.addEventListener('pointercancel', (e) => {
+        if (isDraggingEnd) {
+            isDraggingEnd = false;
+            try { endHandle.releasePointerCapture(e.pointerId); } catch(err){}
+        }
+    });
+
+    // Clicking anywhere on track jumps the nearest handle
+    timelineTrack.addEventListener('click', (e) => {
+        if (e.target === startHandle || e.target === endHandle || startHandle.contains(e.target) || endHandle.contains(e.target)) return;
+        if (totalDuration <= 0) return;
+
+        const frac = getTrackFraction(e.clientX);
+        const clickSec = Math.round(frac * totalDuration);
+
+        // Calculate distance to start and end handles
+        const distStart = Math.abs(clickSec - startSeconds);
+        const distEnd = Math.abs(clickSec - endSeconds);
+
+        if (distStart < distEnd) {
+            startSeconds = Math.max(0, Math.min(endSeconds - 1, clickSec));
+        } else {
+            endSeconds = Math.min(totalDuration, Math.max(startSeconds + 1, clickSec));
+        }
+
+        syncScrubberPositions();
+        updateOptionSizes();
+        updateDownloadSummary();
+    });
+
+    function syncScrubberPositions() {
+        if (totalDuration <= 0) return;
+
+        const startPct = (startSeconds / totalDuration) * 100;
+        const endPct = (endSeconds / totalDuration) * 100;
+
+        startHandle.style.left = `${startPct}%`;
+        endHandle.style.left = `${endPct}%`;
+        timelineRange.style.left = `${startPct}%`;
+        timelineRange.style.width = `${Math.max(1, endPct - startPct)}%`;
+
+        startTooltip.textContent = formatSeconds(startSeconds);
+        endTooltip.textContent = formatSeconds(endSeconds);
+
+        startTimeInput.value = formatSeconds(startSeconds);
+        endTimeInput.value = formatSeconds(endSeconds);
+
+        startSecLabel.textContent = `${Math.floor(startSeconds)}s`;
+        endSecLabel.textContent = `${Math.floor(endSeconds)}s`;
+
+        const clipSecs = Math.max(1, endSeconds - startSeconds);
+        clipDurationDisplay.textContent = formatSeconds(clipSecs);
+
+        const pctOfTotal = Math.round((clipSecs / totalDuration) * 100);
+        activeSelectionMetrics.textContent = `${formatSeconds(startSeconds)} ➔ ${formatSeconds(endSeconds)} (${clipSecs}s • ${pctOfTotal}% of total)`;
+    }
+
+    // Steppers for Start and End points
     document.querySelectorAll('.step-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const type = btn.dataset.type;
@@ -406,16 +628,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (startSeconds >= endSeconds) {
                     startSeconds = Math.max(0, endSeconds - 1);
                 }
-                startTimeInput.value = formatSeconds(startSeconds);
             } else if (type === 'end') {
                 endSeconds = Math.max(0, Math.min(totalDuration, endSeconds + delta));
                 if (endSeconds <= startSeconds) {
                     endSeconds = Math.min(totalDuration, startSeconds + 1);
                 }
-                endTimeInput.value = formatSeconds(endSeconds);
             }
 
-            updateTrimmerDisplay();
+            syncScrubberPositions();
             updateDownloadSummary();
             updateOptionSizes();
         });
@@ -427,8 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (startSeconds >= endSeconds) {
             startSeconds = Math.max(0, endSeconds - 1);
         }
-        startTimeInput.value = formatSeconds(startSeconds);
-        updateTrimmerDisplay();
+        syncScrubberPositions();
         updateDownloadSummary();
         updateOptionSizes();
     });
@@ -439,8 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (endSeconds <= startSeconds) {
             endSeconds = Math.min(totalDuration, startSeconds + 1);
         }
-        endTimeInput.value = formatSeconds(endSeconds);
-        updateTrimmerDisplay();
+        syncScrubberPositions();
         updateDownloadSummary();
         updateOptionSizes();
     });
@@ -450,7 +668,6 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => {
             const preset = btn.dataset.preset;
             startSeconds = 0;
-            startTimeInput.value = "00:00:00";
 
             if (preset === 'full') {
                 endSeconds = totalDuration;
@@ -459,27 +676,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 endSeconds = Math.min(totalDuration, targetSec);
             }
 
-            endTimeInput.value = formatSeconds(endSeconds);
-            updateTrimmerDisplay();
+            syncScrubberPositions();
             updateDownloadSummary();
             updateOptionSizes();
         });
     });
-
-    function updateTrimmerDisplay() {
-        startSecLabel.textContent = `${Math.floor(startSeconds)}s`;
-        endSecLabel.textContent = `${Math.floor(endSeconds)}s`;
-
-        const diff = Math.max(0, endSeconds - startSeconds);
-        clipDurationDisplay.textContent = formatSeconds(diff);
-
-        if (totalDuration > 0) {
-            const leftPct = (startSeconds / totalDuration) * 100;
-            const widthPct = ((endSeconds - startSeconds) / totalDuration) * 100;
-            timelineHighlight.style.left = `${Math.max(0, leftPct)}%`;
-            timelineHighlight.style.width = `${Math.min(100, Math.max(1, widthPct))}%`;
-        }
-    }
 
     function updateDownloadSummary() {
         if (!currentVideoData) return;
@@ -500,13 +701,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (isClippingEnabled) {
-            summary += ` [Clip: ${startTimeInput.value} → ${endTimeInput.value}]`;
+            summary += ` [Clip: ${formatSeconds(startSeconds)} → ${formatSeconds(endSeconds)}]`;
         }
 
         downloadTargetSummary.textContent = summary;
     }
 
-    // Trigger Download Process
+    // ==========================================
+    // DOWNLOAD ENGINE & RESILIENT POLLING FALLBACK
+    // ==========================================
+
     startDownloadBtn.addEventListener('click', async () => {
         if (!currentVideoData) return;
 
@@ -558,18 +762,77 @@ document.addEventListener('DOMContentLoaded', () => {
     function listenToProgress(taskId) {
         if (currentEventSource) {
             currentEventSource.close();
+            currentEventSource = null;
         }
 
-        currentEventSource = new EventSource(`/api/progress/${taskId}`);
+        let isCompletedOrFailed = false;
 
-        currentEventSource.addEventListener('progress', (e) => {
-            const task = JSON.parse(e.data);
-            handleProgressUpdate(task);
-        });
+        // Active Heartbeat Polling Fallback (Runs alongside SSE every 500ms)
+        // Guaranteed to catch completion even if SSE drops, closes, or hangs!
+        const pollInterval = setInterval(async () => {
+            if (isCompletedOrFailed) {
+                clearInterval(pollInterval);
+                return;
+            }
 
-        currentEventSource.addEventListener('error', () => {
-            currentEventSource.close();
-        });
+            try {
+                const res = await fetch(`/api/task/${taskId}`);
+                if (!res.ok) return;
+                const task = await res.json();
+                
+                if (task.status === 'completed') {
+                    isCompletedOrFailed = true;
+                    clearInterval(pollInterval);
+                    if (currentEventSource) {
+                        currentEventSource.close();
+                        currentEventSource = null;
+                    }
+                    handleProgressUpdate(task);
+                } else if (task.status === 'failed') {
+                    isCompletedOrFailed = true;
+                    clearInterval(pollInterval);
+                    if (currentEventSource) {
+                        currentEventSource.close();
+                        currentEventSource = null;
+                    }
+                    handleProgressUpdate(task);
+                } else {
+                    handleProgressUpdate(task);
+                }
+            } catch (e) {
+                // Ignore transient network errors
+            }
+        }, 500);
+
+        try {
+            currentEventSource = new EventSource(`/api/progress/${taskId}`);
+
+            currentEventSource.addEventListener('progress', (e) => {
+                if (isCompletedOrFailed) return;
+                try {
+                    const task = JSON.parse(e.data);
+                    if (task.status === 'completed' || task.status === 'failed') {
+                        isCompletedOrFailed = true;
+                        clearInterval(pollInterval);
+                        if (currentEventSource) {
+                            currentEventSource.close();
+                            currentEventSource = null;
+                        }
+                    }
+                    handleProgressUpdate(task);
+                } catch(err) {}
+            });
+
+            currentEventSource.addEventListener('error', () => {
+                // Do NOT abort! Polling fallback will continue to monitor the task!
+                if (currentEventSource) {
+                    currentEventSource.close();
+                    currentEventSource = null;
+                }
+            });
+        } catch(e) {
+            // Polling will handle it
+        }
     }
 
     function handleProgressUpdate(task) {
@@ -585,18 +848,18 @@ document.addEventListener('DOMContentLoaded', () => {
         modalStage.textContent = task.stage || 'Processing media...';
 
         if (status === 'completed') {
-            if (currentEventSource) currentEventSource.close();
             showModalSuccess(task);
         } else if (status === 'failed') {
-            if (currentEventSource) currentEventSource.close();
             showModalError(task.error || 'Processing failed.');
         }
     }
 
     function showModalSuccess(task) {
         modalTitle.textContent = "Download Ready!";
-        modalStage.textContent = "File processed successfully.";
+        modalStage.textContent = "Media converted and ready for your device.";
         readyFileName.textContent = task.filename || "media_file";
+        modalProgressFill.style.width = "100%";
+        statPct.textContent = "100%";
 
         const fileUrl = `/api/file/${task.id}`;
         btnSaveDirect.href = fileUrl;
@@ -611,10 +874,19 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+
+        // Save to Local History
+        addToHistory({
+            id: task.id,
+            filename: task.filename,
+            size: task.file_size,
+            date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            fileUrl: fileUrl
+        });
     }
 
     function showModalError(errMsg) {
-        modalTitle.textContent = "Error Occurred";
+        modalTitle.textContent = "Download Issue";
         modalErrorMsg.textContent = errMsg;
         modalErrorBox.classList.remove('hidden');
     }
@@ -622,4 +894,80 @@ document.addEventListener('DOMContentLoaded', () => {
     modalDismissBtn.addEventListener('click', () => progressModal.close());
     closeModalCross.addEventListener('click', () => progressModal.close());
     modalRetryBtn.addEventListener('click', () => progressModal.close());
+
+    // ==========================================
+    // DOWNLOADS HISTORY MANAGER (LOCALSTORAGE)
+    // ==========================================
+
+    function getHistory() {
+        try {
+            return JSON.parse(localStorage.getItem('tubeharvest_history') || '[]');
+        } catch(e) {
+            return [];
+        }
+    }
+
+    function saveHistory(list) {
+        try {
+            localStorage.setItem('tubeharvest_history', JSON.stringify(list));
+            updateHistoryBadge();
+        } catch(e){}
+    }
+
+    function addToHistory(item) {
+        const list = getHistory();
+        list.unshift(item);
+        if (list.length > 20) list.pop();
+        saveHistory(list);
+    }
+
+    function updateHistoryBadge() {
+        const list = getHistory();
+        if (list.length > 0) {
+            historyBadge.textContent = list.length;
+            historyBadge.classList.remove('hidden');
+        } else {
+            historyBadge.classList.add('hidden');
+        }
+    }
+
+    function renderHistoryModal() {
+        const list = getHistory();
+        historyList.innerHTML = '';
+        if (list.length === 0) {
+            historyList.innerHTML = '<div class="text-center py-8 text-xs text-zinc-500">No downloads saved in this session yet.</div>';
+            return;
+        }
+
+        list.forEach((item) => {
+            const card = document.createElement('div');
+            card.className = "flex items-center justify-between p-3 bg-dark-950 border border-white/[0.08] rounded-xl text-xs";
+            card.innerHTML = `
+                <div class="min-w-0 pr-3">
+                    <div class="font-bold text-white truncate max-w-xs">${item.filename}</div>
+                    <div class="text-[10px] text-zinc-500 mt-0.5">${item.date} • ${item.size || 'Saved'}</div>
+                </div>
+                <a href="${item.fileUrl}" download="${item.filename}" class="px-2.5 py-1 bg-dark-800 hover:bg-rose-600 text-zinc-200 hover:text-white rounded-lg transition-colors font-semibold flex items-center gap-1 flex-shrink-0">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Save</span>
+                </a>
+            `;
+            historyList.appendChild(card);
+        });
+    }
+
+    historyBtn.addEventListener('click', () => {
+        renderHistoryModal();
+        if (typeof historyModal.showModal === 'function') {
+            historyModal.showModal();
+        } else {
+            historyModal.setAttribute('open', '');
+        }
+    });
+
+    closeHistoryBtn.addEventListener('click', () => historyModal.close());
+    clearHistoryBtn.addEventListener('click', () => {
+        saveHistory([]);
+        renderHistoryModal();
+    });
 });

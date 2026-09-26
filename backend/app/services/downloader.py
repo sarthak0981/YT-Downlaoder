@@ -18,9 +18,9 @@ task_storage: Dict[str, Dict[str, Any]] = {}
 
 def sanitize_filename(name: str) -> str:
     """Removes invalid characters for file systems across Windows/Linux."""
-    clean = re.sub(r'[\\/*?:"<>|]', "", name)
+    clean = re.sub(r'[\'\"\\/*?:"<>|]', "", name)
     clean = clean.strip()
-    return clean[:100] if len(clean) > 100 else clean
+    return clean[:100] if len(clean) > 100 else (clean or "download")
 
 class DownloaderService:
     @staticmethod
@@ -91,7 +91,7 @@ class DownloaderService:
         end_time: Optional[float],
         title: Optional[str]
     ):
-        cls.update_task(task_id, status='processing', stage='Connecting to stream server...')
+        cls.update_task(task_id, status='processing', stage='Connecting to stream server...', progress=5.0)
         
         output_template = str(DOWNLOADS_DIR / f"{task_id}_%(title).100s.%(ext)s")
 
@@ -112,31 +112,51 @@ class DownloaderService:
 
                 speed = d.get('speed') or 0
                 speed_str = f"{format_bytes(int(speed))}/s" if speed else d.get('_speed_str', '--/s')
-                eta_str = d.get('_eta_str') or f"{d.get('eta')}s" if d.get('eta') else '--'
+                eta_str = d.get('_eta_str') or (f"{d.get('eta')}s" if d.get('eta') else '--')
 
+                display_pct = min(94.0, max(5.0, pct))
                 cls.update_task(
                     task_id,
                     status='downloading',
-                    progress=min(95.0, pct),
+                    progress=display_pct,
                     speed=speed_str,
                     eta=eta_str,
-                    stage=f"Downloading stream ({pct}%)..."
+                    stage=f"Downloading stream ({display_pct:.0f}%)..."
                 )
             elif d['status'] == 'finished':
                 cls.update_task(
                     task_id,
                     status='processing',
-                    progress=96.0,
-                    stage="Finalizing media with FFmpeg..."
+                    progress=95.0,
+                    stage="Finalizing stream with FFmpeg..."
+                )
+
+        def postprocessor_hook(d):
+            status = d.get('status')
+            if status == 'started':
+                cls.update_task(
+                    task_id,
+                    status='processing',
+                    progress=97.0,
+                    stage="Converting & muxing audio/video with FFmpeg..."
+                )
+            elif status == 'finished':
+                cls.update_task(
+                    task_id,
+                    status='processing',
+                    progress=99.0,
+                    stage="Packaging output file..."
                 )
 
         ydl_opts: Dict[str, Any] = {
             'outtmpl': output_template,
             'progress_hooks': [progress_hook],
+            'postprocessor_hooks': [postprocessor_hook],
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
             'socket_timeout': 30,
+            'concurrent_fragment_downloads': 5,
         }
         
         if shutil.which('node'):
@@ -148,7 +168,8 @@ class DownloaderService:
             s_time = start_time if start_time is not None else 0.0
             e_time = end_time if end_time is not None else "inf"
             ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [(s_time, e_time)])
-            # Do NOT set force_keyframes_at_cuts = True because it forces slow CPU software re-encoding
+            # Stream-copy fast mode without forced slow CPU re-encoding
+            ydl_opts['force_keyframes_at_cuts'] = False
 
         target_ext = "mp4"
 
@@ -183,7 +204,7 @@ class DownloaderService:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(url, download=True)
 
-            cls.update_task(task_id, stage="Locating output file...")
+            cls.update_task(task_id, stage="Locating output file...", progress=99.0)
 
             # Locate the generated file with matching prefix
             matching_files = list(DOWNLOADS_DIR.glob(f"{task_id}_*"))
@@ -218,12 +239,14 @@ class DownloaderService:
 
             # If user provided a clip, add timestamp info to display filename
             if is_clipped:
-                stem = Path(clean_name).stem
+                stem = sanitize_filename(Path(clean_name).stem)
                 ext = Path(clean_name).suffix
                 s_str = format_seconds(start_time).replace(':', '-') if start_time is not None else "00-00"
                 e_str = format_seconds(end_time).replace(':', '-') if end_time is not None else "end"
                 clip_tag = f"_[clip_{s_str}_to_{e_str}]"
                 clean_name = f"{stem}{clip_tag}{ext}"
+            else:
+                clean_name = sanitize_filename(Path(clean_name).stem) + Path(clean_name).suffix
 
             cls.update_task(
                 task_id,
