@@ -50,12 +50,28 @@ class YouTubeService:
         return opts
 
     @classmethod
-    def test_extraction(cls, url: str) -> Dict[str, Any]:
-        """Diagnostic probe for /api/diag/test-extract to test extraction health."""
+    def test_extraction(cls, url: str, client: Optional[str] = None) -> Dict[str, Any]:
+        """Diagnostic probe for /api/diag/test-extract to test extraction health across different InnerTube clients."""
         clean_url = clean_youtube_url(url)
         cookie_path = setup_cookies()
-        opts = cls.get_ydl_opts()
+        
+        clients_to_test = [c.strip() for c in client.split(",") if c.strip()] if client else None
+        opts = cls.get_ydl_opts(player_clients=clients_to_test)
         active_clients = opts.get('extractor_args', {}).get('youtube', {}).get('player_client', [])
+        
+        captured_logs = []
+        class DiagLogger:
+            def debug(self, msg):
+                if any(k in msg.lower() for k in ["player", "innertube", "challenge", "format", "warning", "error"]):
+                    captured_logs.append(sanitize_log(msg))
+            def warning(self, msg):
+                captured_logs.append(f"WARNING: {sanitize_log(msg)}")
+            def error(self, msg):
+                captured_logs.append(f"ERROR: {sanitize_log(msg)}")
+                
+        opts['logger'] = DiagLogger()
+        opts['quiet'] = False
+        opts['no_warnings'] = False
         
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -72,6 +88,7 @@ class YouTubeService:
                     "audio_streams": len([f for f in formats if f.get('acodec') != 'none' and f.get('url')]),
                     "active_clients": active_clients,
                     "cookies_attached": cookie_path is not None,
+                    "telemetry_logs": captured_logs[-10:] if captured_logs else []
                 }
         except Exception as e:
             clean_err = sanitize_log(str(e))
@@ -82,6 +99,7 @@ class YouTubeService:
                 "active_clients": active_clients,
                 "cookies_attached": cookie_path is not None,
                 "error": clean_err,
+                "telemetry_logs": captured_logs[-10:] if captured_logs else [],
                 "diagnostic_hint": (
                     "If the error mentions bot verification or login required, YouTube blocked Render's cloud IP. "
                     "Provide cookies via 'YOUTUBE_COOKIES' or a proxy via 'YTDL_PROXY'."
@@ -116,10 +134,8 @@ class YouTubeService:
                     clean_fb = sanitize_log(str(fb_err))
                     logger.error(f"Mobile client fallback failed: {clean_fb}")
                     raise ValueError(
-                        "YouTube bot verification triggered on cloud server (Render datacenter IP). "
-                        "Add your YouTube cookies in Render Environment Variables under 'YOUTUBE_COOKIES' "
-                        "or as a Secret File at '/etc/secrets/cookies.txt', or configure a proxy via 'YTDL_PROXY'. "
-                        "Check /api/diag for diagnostics."
+                        f"YouTube extraction failed on Render: {clean_fb}. "
+                        "To resolve cloud IP restrictions, configure 'YOUTUBE_COOKIES' or a residential proxy via 'YTDL_PROXY'. Visit /api/diag for diagnostics."
                     )
             elif "Private video" in raw_err:
                 raise ValueError("This video is private and cannot be downloaded.")

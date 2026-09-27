@@ -41,10 +41,13 @@ def get_diagnostics():
     return get_system_diagnostics()
 
 @router.get("/diag/test-extract")
-def run_test_extraction(url: Optional[str] = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"):
+def run_test_extraction(
+    url: Optional[str] = "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    client: Optional[str] = None
+):
     """Performs a live test extraction to verify whether YouTube allows metadata fetching from this host."""
     target_url = url or "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-    return YouTubeService.test_extraction(target_url)
+    return YouTubeService.test_extraction(target_url, client=client)
 
 @router.post("/info")
 async def get_video_info(req: InfoRequest, background_tasks: BackgroundTasks):

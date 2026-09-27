@@ -366,10 +366,21 @@ def get_system_diagnostics() -> Dict[str, Any]:
         "sanitized_url": sanitize_log(raw_proxy) if raw_proxy else None
     }
 
+    # Public IP detection for datacenter IP diagnostics
+    public_ip = None
+    try:
+        import urllib.request
+        with urllib.request.urlopen("https://api.ipify.org?format=json", timeout=3) as resp:
+            import json as _json
+            public_ip = _json.loads(resp.read().decode()).get("ip")
+    except Exception:
+        pass
+
     return {
         "platform": sys.platform,
         "python_version": sys.version.split()[0],
         "ytdl_version": yt_dlp.version.__version__,
+        "public_ip": public_ip,
         "ffmpeg": {
             "installed": ffmpeg_bin is not None,
             "version": ffmpeg_version,
