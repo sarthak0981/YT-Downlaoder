@@ -7,29 +7,15 @@ from typing import Optional, Dict, Any
 import yt_dlp
 
 from ..config import BASE_DIR
-from ..utils.ytdl_helper import apply_anti_bot_options
+from ..utils.ytdl_helper import apply_anti_bot_options, sanitize_log
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("proxy_service")
 
 PROXIES_DIR = BASE_DIR / "downloads" / "proxies"
 PROXIES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Tracks status of proxy generation: {video_id: {"status": "generating"|"ready"|"failed", "file": Path}}
 proxy_status_map: Dict[str, Dict[str, Any]] = {}
-
-def get_node_path() -> Optional[str]:
-    found = shutil.which('node')
-    if found:
-        return found
-    candidates = [
-        r"C:\Program Files\nodejs\node.exe",
-        r"C:\Program Files (x86)\nodejs\node.exe",
-        os.path.expandvars(r"%APPDATA%\npm\node.cmd"),
-    ]
-    for c in candidates:
-        if Path(c).exists():
-            return c
-    return None
 
 class ProxyService:
     @classmethod
@@ -116,5 +102,6 @@ class ProxyService:
             else:
                 proxy_status_map[video_id] = {"status": "failed", "error": "Proxy output missing"}
         except Exception as e:
-            logger.warning(f"Failed to generate proxy video for {video_id}: {e}")
-            proxy_status_map[video_id] = {"status": "failed", "error": str(e)}
+            clean_err = sanitize_log(str(e))
+            logger.warning(f"Failed to generate proxy video for {video_id}: {clean_err}")
+            proxy_status_map[video_id] = {"status": "failed", "error": clean_err}

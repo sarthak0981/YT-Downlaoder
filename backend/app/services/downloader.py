@@ -14,9 +14,16 @@ import yt_dlp
 
 from ..config import DOWNLOADS_DIR
 from ..utils.time_format import format_bytes, format_seconds, parse_timestamp
-from ..utils.ytdl_helper import apply_anti_bot_options
+from ..utils.ytdl_helper import (
+    apply_anti_bot_options,
+    get_ffmpeg_path,
+    get_ffprobe_path,
+    get_node_path,
+    sanitize_log,
+    setup_cookies
+)
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("downloader_service")
 
 # In-memory dictionary for task status
 task_storage: Dict[str, Dict[str, Any]] = {}
@@ -30,20 +37,17 @@ def sanitize_filename(name: str) -> str:
     clean = clean.strip()
     return clean[:100] if len(clean) > 100 else (clean or "download")
 
-def get_node_path() -> Optional[str]:
-    """Finds node executable on system."""
-    found = shutil.which('node')
-    if found:
-        return found
-    candidates = [
-        r"C:\Program Files\nodejs\node.exe",
-        r"C:\Program Files (x86)\nodejs\node.exe",
-        os.path.expandvars(r"%APPDATA%\npm\node.cmd"),
-    ]
-    for c in candidates:
-        if Path(c).exists():
-            return c
-    return None
+def _run_ffmpeg(cmd: list, timeout: int = 120) -> subprocess.CompletedProcess:
+    """Runs ffmpeg with dynamic binary path resolution."""
+    ffmpeg_bin = get_ffmpeg_path() or "ffmpeg"
+    full_cmd = [ffmpeg_bin] + cmd[1:]
+    return subprocess.run(full_cmd, capture_output=True, text=True, timeout=timeout)
+
+def _run_ffprobe(cmd: list, timeout: int = 10) -> subprocess.CompletedProcess:
+    """Runs ffprobe with dynamic binary path resolution."""
+    ffprobe_bin = get_ffprobe_path() or "ffprobe"
+    full_cmd = [ffprobe_bin] + cmd[1:]
+    return subprocess.run(full_cmd, capture_output=True, text=True, timeout=timeout)
 
 def ensure_mp4_audio_compatibility(file_path: Path) -> Path:
     """
@@ -55,10 +59,8 @@ def ensure_mp4_audio_compatibility(file_path: Path) -> Path:
         return file_path
         
     try:
-        res = subprocess.run(
+        res = _run_ffprobe(
             ['ffprobe', '-v', 'error', '-show_streams', '-select_streams', 'a', '-of', 'json', str(file_path)],
-            capture_output=True,
-            text=True,
             timeout=10
         )
         needs_remux = False
@@ -85,13 +87,13 @@ def ensure_mp4_audio_compatibility(file_path: Path) -> Path:
                 '-avoid_negative_ts', 'make_zero',
                 str(temp_fixed)
             ]
-            conv = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            conv = _run_ffmpeg(cmd, timeout=120)
             if conv.returncode == 0 and temp_fixed.exists() and temp_fixed.stat().st_size > 0:
                 file_path.unlink(missing_ok=True)
                 temp_fixed.rename(file_path)
                 logger.info("Successfully converted audio to universal AAC!")
     except Exception as e:
-        logger.warning(f"Audio compatibility check exception: {e}")
+        logger.warning(f"Audio compatibility check exception: {sanitize_log(str(e))}")
         
     return file_path
 
@@ -111,13 +113,13 @@ def align_clip_video_audio(file_path: Path, target_ext: str = "mp4") -> Path:
         str(temp_aligned)
     ]
     try:
-        conv = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        conv = _run_ffmpeg(cmd, timeout=120)
         if conv.returncode == 0 and temp_aligned.exists() and temp_aligned.stat().st_size > 0:
             file_path.unlink(missing_ok=True)
             temp_aligned.rename(file_path)
             logger.info(f"Successfully aligned clip audio and video to exact 0.000s: {file_path.name}")
     except Exception as e:
-        logger.warning(f"Clip alignment exception: {e}")
+        logger.warning(f"Clip alignment exception: {sanitize_log(str(e))}")
     return file_path
 
 def align_clip_audio_only(file_path: Path, target_ext: str = "mp3", bitrate: str = "320k") -> Path:
@@ -137,12 +139,12 @@ def align_clip_audio_only(file_path: Path, target_ext: str = "mp3", bitrate: str
         str(temp_aligned)
     ]
     try:
-        conv = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        conv = _run_ffmpeg(cmd, timeout=120)
         if conv.returncode == 0 and temp_aligned.exists() and temp_aligned.stat().st_size > 0:
             file_path.unlink(missing_ok=True)
             return temp_aligned
     except Exception as e:
-        logger.warning(f"Audio clip alignment exception: {e}")
+        logger.warning(f"Audio clip alignment exception: {sanitize_log(str(e))}")
     return file_path
 
 def ensure_audio_only_file(file_path: Path, target_ext: str, bitrate: str = "320k") -> Path:
@@ -172,12 +174,12 @@ def ensure_audio_only_file(file_path: Path, target_ext: str, bitrate: str = "320
     cmd += ['-avoid_negative_ts', 'make_zero', str(output_path)]
     
     try:
-        conv = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        conv = _run_ffmpeg(cmd, timeout=120)
         if conv.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
             file_path.unlink(missing_ok=True)
             return output_path
     except Exception as e:
-        logger.warning(f"Audio extraction exception: {e}")
+        logger.warning(f"Audio extraction exception: {sanitize_log(str(e))}")
         
     return file_path
 
@@ -476,8 +478,10 @@ class DownloaderService:
                     info_dict = ydl.extract_info(url, download=True)
             except Exception as dl_err:
                 err_str = str(dl_err)
+                clean_dl_err = sanitize_log(err_str)
+                logger.warning(f"Initial download attempt failed: {clean_dl_err}")
                 if "Sign in to confirm you’re not a bot" in err_str or "confirm you're not a bot" in err_str or "bot" in err_str.lower():
-                    logger.info("Bot verification detected during download. Retrying with mobile stream client...")
+                    logger.info("Bot verification detected during download. Retrying with mobile stream client (visionos, android)...")
                     cls.update_task(task_id, stage="Bypassing cloud bot verification with mobile client...", progress=12.0)
                     apply_anti_bot_options(ydl_opts, player_clients=['visionos', 'android'])
                     if download_type == "video":
@@ -555,12 +559,13 @@ class DownloaderService:
             )
 
         except Exception as e:
-            logger.exception("Error executing download:")
+            clean_err = sanitize_log(str(e))
+            logger.error(f"Error executing download for task {task_id}: {clean_err}")
             cls.update_task(
                 task_id,
                 status='failed',
                 stage='Failed to process video',
-                error=str(e)
+                error=clean_err
             )
         finally:
             stop_monitor_event.set()

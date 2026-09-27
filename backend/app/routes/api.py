@@ -14,6 +14,7 @@ from ..services.youtube import YouTubeService
 from ..services.downloader import DownloaderService
 from ..services.proxy import ProxyService
 from ..utils.time_format import parse_timestamp
+from ..utils.ytdl_helper import get_system_diagnostics
 
 router = APIRouter(prefix="/api")
 
@@ -33,6 +34,17 @@ class DownloadRequest(BaseModel):
 @router.get("/health")
 def health_check():
     return {"status": "ok", "service": "yt-downloader-pro"}
+
+@router.get("/diag")
+def get_diagnostics():
+    """Returns safe system telemetry, yt-dlp version, FFmpeg status, and cookie configuration."""
+    return get_system_diagnostics()
+
+@router.get("/diag/test-extract")
+def run_test_extraction(url: Optional[str] = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"):
+    """Performs a live test extraction to verify whether YouTube allows metadata fetching from this host."""
+    target_url = url or "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    return YouTubeService.test_extraction(target_url)
 
 @router.post("/info")
 async def get_video_info(req: InfoRequest, background_tasks: BackgroundTasks):

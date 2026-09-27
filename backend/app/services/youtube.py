@@ -1,10 +1,13 @@
 import re
 import shutil
+import logging
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import yt_dlp
 from ..utils.time_format import format_seconds, format_bytes
-from ..utils.ytdl_helper import apply_anti_bot_options
+from ..utils.ytdl_helper import apply_anti_bot_options, sanitize_log, setup_cookies
+
+logger = logging.getLogger("youtube_service")
 
 def clean_youtube_url(url: str) -> str:
     """Cleans up and normalizes YouTube URLs (including Shorts, youtu.be, mobile links)."""
@@ -47,35 +50,85 @@ class YouTubeService:
         return opts
 
     @classmethod
+    def test_extraction(cls, url: str) -> Dict[str, Any]:
+        """Diagnostic probe for /api/diag/test-extract to test extraction health."""
+        clean_url = clean_youtube_url(url)
+        cookie_path = setup_cookies()
+        opts = cls.get_ydl_opts()
+        active_clients = opts.get('extractor_args', {}).get('youtube', {}).get('player_client', [])
+        
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(clean_url, download=False)
+                formats = info.get('formats', [])
+                return {
+                    "status": "success",
+                    "url": clean_url,
+                    "video_id": info.get('id'),
+                    "title": info.get('title'),
+                    "duration": info.get('duration'),
+                    "formats_count": len(formats),
+                    "video_streams": len([f for f in formats if f.get('vcodec') != 'none' and f.get('url')]),
+                    "audio_streams": len([f for f in formats if f.get('acodec') != 'none' and f.get('url')]),
+                    "active_clients": active_clients,
+                    "cookies_attached": cookie_path is not None,
+                }
+        except Exception as e:
+            clean_err = sanitize_log(str(e))
+            logger.warning(f"Diagnostic test extraction failed: {clean_err}")
+            return {
+                "status": "failed",
+                "url": clean_url,
+                "active_clients": active_clients,
+                "cookies_attached": cookie_path is not None,
+                "error": clean_err,
+                "diagnostic_hint": (
+                    "If the error mentions bot verification or login required, YouTube blocked Render's cloud IP. "
+                    "Provide cookies via 'YOUTUBE_COOKIES' or a proxy via 'YTDL_PROXY'."
+                )
+            }
+
+    @classmethod
     def get_video_info(cls, url: str) -> Dict[str, Any]:
         clean_url = clean_youtube_url(url)
-        opts = cls.get_ydl_opts()
+        cookie_path = setup_cookies()
+        logger.info(f"Fetching video info for {clean_url} (Cookies: {'Present' if cookie_path else 'None'})")
         
+        opts = cls.get_ydl_opts()
         info = None
+        
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(clean_url, download=False)
         except Exception as e:
-            error_msg = str(e)
-            # If YouTube blocks cloud/datacenter IP with bot detection, retry with strict mobile client
-            if "Sign in to confirm you’re not a bot" in error_msg or "confirm you're not a bot" in error_msg or "bot" in error_msg.lower():
+            raw_err = str(e)
+            clean_err = sanitize_log(raw_err)
+            logger.warning(f"Primary extraction attempt failed: {clean_err}")
+            
+            # If YouTube blocks cloud/datacenter IP with bot detection, retry with mobile client
+            if any(term in raw_err.lower() for term in ["bot", "confirm you're not a bot", "sign in", "requested format is not available"]):
+                logger.info("Retrying with mobile clients (visionos, android)...")
                 try:
-                    fallback_opts = cls.get_ydl_opts(player_clients=['ios', 'android'])
+                    fallback_opts = cls.get_ydl_opts(player_clients=['visionos', 'android'])
                     with yt_dlp.YoutubeDL(fallback_opts) as ydl_fb:
                         info = ydl_fb.extract_info(clean_url, download=False)
                 except Exception as fb_err:
+                    clean_fb = sanitize_log(str(fb_err))
+                    logger.error(f"Mobile client fallback failed: {clean_fb}")
                     raise ValueError(
-                        "YouTube bot verification triggered on cloud server. "
-                        "Add your YouTube cookies in Render Environment Variables under YOUTUBE_COOKIES."
+                        "YouTube bot verification triggered on cloud server (Render datacenter IP). "
+                        "Add your YouTube cookies in Render Environment Variables under 'YOUTUBE_COOKIES' "
+                        "or as a Secret File at '/etc/secrets/cookies.txt', or configure a proxy via 'YTDL_PROXY'. "
+                        "Check /api/diag for diagnostics."
                     )
-            elif "Private video" in error_msg:
+            elif "Private video" in raw_err:
                 raise ValueError("This video is private and cannot be downloaded.")
-            elif "Video unavailable" in error_msg:
+            elif "Video unavailable" in raw_err:
                 raise ValueError("This video is unavailable or has been removed.")
-            elif "Sign in to confirm your age" in error_msg:
-                raise ValueError("This video is age-restricted.")
+            elif "Sign in to confirm your age" in raw_err:
+                raise ValueError("This video is age-restricted and requires YouTube cookies to view.")
             else:
-                raise ValueError(f"Failed to fetch video details: {error_msg}")
+                raise ValueError(f"Failed to fetch video details: {clean_err}")
 
         if not info:
             raise ValueError("No video information could be retrieved.")

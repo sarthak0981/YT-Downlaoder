@@ -12,3 +12,7 @@ services:
         value: 0.0.0.0
       - key: FILE_EXPIRY_MINUTES
         value: 30
+      - key: YOUTUBE_COOKIES
+        sync: false
+      - key: YTDL_PROXY
+        sync: false
